@@ -210,6 +210,26 @@ export async function addRun(date: string, distanceKm: number, shoe?: string, th
   })
 }
 
+/** Adds a workout other than a run (walk, hike, strength, ball sport) entered in the app. */
+export async function addWorkout(date: string, w: Pick<Activity, 'kind'> & Partial<Pick<Activity, 'distanceKm' | 'durationSec' | 'place' | 'sport' | 'exercises'>>) {
+  await db.transaction('rw', db.days, async () => {
+    const day = (await db.days.get(date)) ?? emptyDay(date)
+    const a: Activity = {
+      kind: w.kind,
+      distanceKm: w.distanceKm ?? 0,
+      durationSec: w.durationSec || undefined,
+      place: w.place?.trim() || undefined,
+      sport: w.sport,
+      exercises: w.exercises?.length ? w.exercises : undefined,
+      source: 'app',
+      companions: [],
+      details: [],
+      tags: [],
+    }
+    await db.days.put({ ...day, activities: [...day.activities, a], savedAt: Date.now() })
+  })
+}
+
 /** Sets (or clears) the shoe of the index-th activity of a day. */
 export async function setRunShoe(date: string, index: number, shoe: string | undefined) {
   await db.transaction('rw', db.days, db.shoes, async () => {
