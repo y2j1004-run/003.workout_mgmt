@@ -28,7 +28,7 @@ export default function InBody() {
       {latest ? (
         <>
           <Latest latest={latest} prev={records.at(-2)} />
-          <InBodyLevel records={records} />
+          <InBodyLevel records={records} all={all} />
         </>
       ) : (
         <Card title="아직 인바디 기록이 없습니다">

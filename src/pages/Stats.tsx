@@ -1,12 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type ReactNode } from 'react'
 import { moveSection, resolveOrder, STATS_SECTIONS, type StatsSectionId } from '../analytics/sectionOrder'
-import { bodyFatSeries, crewCounts, metricSeries, monthlyKm, shoeTotals, summary } from '../analytics/stats'
+import { ageOn, maxHeartRate } from '../analytics/fitness'
+import { bodyFatSeries, crewCounts, metricSeries, monthlyKm, runsOf, shoeTotals, summary } from '../analytics/stats'
 import BarChart from '../components/charts/BarChart'
 import LineChart from '../components/charts/LineChart'
+import { IntensityCard, Vo2Card } from '../components/FitnessCards'
 import RaceRecords from '../components/RaceRecords'
 import { db } from '../db/db'
 import { getStatsOrder, setStatsOrder } from '../db/layout'
+import { getProfile, getVo2Entries } from '../db/profile'
 
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
@@ -17,8 +20,10 @@ export default function Stats() {
   const inbody = useLiveQuery(() => db.inbody.toArray())
   // wrapped so "no saved order" (undefined) is told apart from "still loading"
   const savedOrder = useLiveQuery(async () => ({ value: await getStatsOrder() }))
+  const profile = useLiveQuery(getProfile)
+  const vo2 = useLiveQuery(getVo2Entries)
   const [arranging, setArranging] = useState(false)
-  if (!days || !shoeList || !inbody || !savedOrder) return null
+  if (!days || !shoeList || !inbody || !savedOrder || !profile || !vo2) return null
   const order = resolveOrder(savedOrder.value)
   if (!days.length) {
     return (
@@ -39,6 +44,8 @@ export default function Stats() {
   const shoes = shoeTotals(days, shoeList).filter((sh) => sh.km > 0)
   const crews = crewCounts(days)
   const lastBf = bodyFat.at(-1)
+  const age = ageOn(profile.birthYear, today())
+  const maxHr = maxHeartRate(runsOf(days), age)
   const bfChange = lastBf && bodyFat.length > 1 ? lastBf.value - bodyFat[0].value : undefined
 
   const sections: Record<StatsSectionId, ReactNode> = {
@@ -73,6 +80,8 @@ export default function Stats() {
         <LineChart data={bp} format={(d) => `${d.date} · ${d.value}`} />
       </Card>
     ),
+    vo2max: <Vo2Card days={days} entries={vo2} profile={profile} />,
+    intensity: <IntensityCard days={days} maxHr={maxHr} hasAge={age != null} />,
     races: <RaceRecords days={days} />,
     crews: crews.length > 0 && (
       <Card title="크루 활동">
