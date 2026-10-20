@@ -9,6 +9,8 @@ export interface GarminActivity extends GarminData {
   date: string // YYYY-MM-DD
   kind: GarminKind
   type: string
+  /** the file gave this distance in meters or miles and it was converted to km */
+  convertedFrom?: 'm' | 'mi'
 }
 
 export interface GarminParseResult {
@@ -48,6 +50,12 @@ export const FIELD_LABELS: Record<Field, string> = {
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s®.()]/g, '')
 
+/** "Distance (m)" -> { base: "Distance", unit: "m" } */
+function splitUnit(h: string): { base: string; unit?: string } {
+  const m = h.match(/^(.*?)\s*\(([^)]*)\)\s*$/)
+  return m ? { base: m[1], unit: m[2].trim().toLowerCase() } : { base: h }
+}
+
 export function parseGarminCsv(text: string): GarminParseResult {
   const rows = parseCsv(text.replace(/^﻿/, ''))
   const header = rows.shift() ?? []
@@ -56,7 +64,8 @@ export function parseGarminCsv(text: string): GarminParseResult {
   for (const field of Object.keys(HEADERS) as Field[]) {
     // earlier spellings win, so "Time" is preferred over "Elapsed Time"
     for (const name of HEADERS[field]) {
-      const i = header.findIndex((h) => norm(h) === norm(name))
+      // a unit in parentheses ("Distance (m)") still matches; the unit is read below
+      const i = header.findIndex((h) => norm(h) === norm(name) || norm(splitUnit(h).base) === norm(name))
       if (i !== -1) {
         index[field] = i
         columns[field] = header[i]
@@ -65,6 +74,7 @@ export function parseGarminCsv(text: string): GarminParseResult {
     }
   }
 
+  const distanceUnit = columns.distance ? splitUnit(columns.distance).unit : undefined
   const activities: GarminActivity[] = []
   let skippedRows = 0
   for (const row of rows) {
@@ -76,14 +86,17 @@ export function parseGarminCsv(text: string): GarminParseResult {
       continue
     }
     const type = get('type') ?? ''
+    const durationSec = duration(get('time'))
+    const dist = parseDistance(get('distance'), distanceUnit, durationSec)
     activities.push({
       date: `${dm[1]}-${dm[2].padStart(2, '0')}-${dm[3].padStart(2, '0')}`,
       startTime: rawDate,
       type,
       kind: kindOf(type),
       title: get('title'),
-      distanceKm: num(get('distance')) ?? 0,
-      durationSec: duration(get('time')),
+      distanceKm: dist.km,
+      convertedFrom: dist.from,
+      durationSec,
       avgHr: num(get('avgHr')),
       maxHr: num(get('maxHr')),
       cadence: num(get('cadence')),
@@ -101,6 +114,30 @@ function kindOf(type: string): GarminKind {
   if (/strength|근력|웨이트/.test(t)) return 'strength'
   return 'other'
 }
+
+// Faster than this per km is impossible on foot, so the number must be meters.
+const FASTEST_SEC_PER_KM = 100
+
+/**
+ * Garmin writes most distances in km but some activities (track, treadmill intervals, pool) in meters,
+ * and a few exports carry a unit. Order: unit in the cell or header, then the size of the number
+ * (no single run is over 100km), then the pace it would imply.
+ */
+export function parseDistance(raw: string | undefined, headerUnit?: string, durationSec?: number): { km: number; from?: 'm' | 'mi' } {
+  if (!raw) return { km: 0 }
+  const m = raw.trim().match(/^([\d.,]+)\s*([a-zA-Z]*)$/)
+  const value = num(m?.[1] ?? raw)
+  if (value == null) return { km: 0 }
+  const unit = (m?.[2] || headerUnit || '').toLowerCase()
+  if (unit === 'm' || unit === 'meters' || unit === '미터') return { km: round2(value / 1000), from: 'm' }
+  if (unit === 'mi' || unit === 'miles') return { km: round2(value * 1.609344), from: 'mi' }
+  if (unit === 'km') return { km: value }
+  if (value > 100) return { km: round2(value / 1000), from: 'm' }
+  if (durationSec && value > 0 && durationSec / value < FASTEST_SEC_PER_KM) return { km: round2(value / 1000), from: 'm' }
+  return { km: value }
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 function clean(v: string | undefined): string | undefined {
   const t = v?.trim()

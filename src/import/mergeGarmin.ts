@@ -84,6 +84,13 @@ export function mergeGarmin(
       const same = day.activities.find((a) => a.garmin?.startTime === g.startTime)
       if (!same) return true
       same.garmin = toData(g)
+      // a run that came from the watch takes the corrected reading (e.g. a distance first read in the wrong unit),
+      // unless the user set the distance by hand
+      if (same.source === 'garmin' && same.appEdits?.distanceKm === undefined) {
+        same.distanceKm = g.distanceKm
+        same.durationSec = undefined
+        same.paceSecPerKm = undefined
+      }
       fillFromGarmin(same)
       stats.updated++
       return false

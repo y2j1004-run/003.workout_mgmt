@@ -68,6 +68,11 @@ export default function GarminImport() {
               <p className="tabular-nums">
                 {dates[0]} ~ {dates.at(-1)} · 활동 {acts.length}개 (러닝 {count('run')}, 걷기 {count('walk')}, 근력 {count('strength')}, 기타 {count('other')})
               </p>
+              {acts.some((a) => a.convertedFrom) && (
+                <p className="text-xs text-slate-500">
+                  미터·마일로 적힌 거리 {acts.filter((a) => a.convertedFrom).length}개를 km로 바꿔 읽었습니다.
+                </p>
+              )}
               {preview && (
                 <p className="tabular-nums text-slate-600">
                   저장하면: 기존 러닝에 합침 {preview.matched} · 새 러닝 {preview.added + addAnyway.size} · 이미 가져온 활동 갱신 {preview.updated} · 웨이트 표시{' '}
