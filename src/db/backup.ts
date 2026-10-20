@@ -1,4 +1,6 @@
+import type { Goals } from '../analytics/home'
 import type { InBodyRecord } from '../inbody/inbody'
+import { getGoals, setGoals } from './goals'
 import { db, type Shoe, type StoredDay } from './db'
 
 const APP = 'workout-mgmt'
@@ -10,13 +12,14 @@ export interface Backup {
   exportedAt: string
   days: StoredDay[]
   shoes: Shoe[]
-  /** added later; older backups don't have it */
+  /** added later; older backups don't have these */
   inbody?: InBodyRecord[]
+  goals?: Goals
 }
 
 export async function createBackup(): Promise<Backup> {
-  const [days, shoes, inbody] = await Promise.all([db.days.orderBy('date').toArray(), db.shoes.toArray(), db.inbody.orderBy('date').toArray()])
-  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody }
+  const [days, shoes, inbody, goals] = await Promise.all([db.days.orderBy('date').toArray(), db.shoes.toArray(), db.inbody.orderBy('date').toArray(), getGoals()])
+  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody, goals }
 }
 
 export function backupFileName(b: Backup) {
@@ -52,7 +55,8 @@ export type RestoreMode = 'merge' | 'replace'
  * replace: deletes everything on the phone first.
  */
 export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ days: number; shoes: number; inbody: number }> {
-  return db.transaction('rw', db.days, db.shoes, db.inbody, async () => {
+  return db.transaction('rw', db.days, db.shoes, db.inbody, db.meta, async () => {
+    if (b.goals && (mode === 'replace' || !Object.keys(await getGoals()).length)) await setGoals(b.goals)
     if (mode === 'replace') {
       await db.days.clear()
       await db.shoes.clear()
