@@ -10,8 +10,6 @@ const base = preview ? './' : process.env.GITHUB_PAGES ? '/003.workout_mgmt/' : 
 
 export default defineConfig({
   base,
-  // the preview is one HTML file, so lazily loaded code must be bundled in
-  build: preview ? { rollupOptions: { output: { inlineDynamicImports: true } } } : undefined,
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
