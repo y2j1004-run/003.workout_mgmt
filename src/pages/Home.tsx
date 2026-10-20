@@ -1,10 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { goalProgress, runStreak, weekSummary } from '../analytics/home'
 import { bodyFatSeries, runsOf } from '../analytics/stats'
 import { db } from '../db/db'
 import { customGoalRatio, getCustomGoals, getGoals, updateCustomGoal } from '../db/goals'
 import { getProfile } from '../db/profile'
+import { pickGreeting } from '../analytics/greeting'
 import type { InBodyRecord } from '../inbody/inbody'
 
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
@@ -161,17 +162,43 @@ export default function Home() {
   )
 }
 
+const LAST_GREETING = 'last-greeting'
+
+/** A new greeting each time the home tab opens, remembering the last one so it doesn't repeat. */
+function useGreeting(): string {
+  const [greeting] = useState(() => {
+    let last: string | undefined
+    try {
+      last = localStorage.getItem(LAST_GREETING) ?? undefined
+    } catch {
+      // without storage a repeat now and then is fine
+    }
+    const g = pickGreeting(new Date().getHours(), last)
+    try {
+      localStorage.setItem(LAST_GREETING, g)
+    } catch {
+      // ignore
+    }
+    return g
+  })
+  return greeting
+}
+
 function Header({ date, streak = 0, name, sports }: { date: string; streak?: number; name?: string; sports?: string[] }) {
+  const greeting = useGreeting()
   return (
-    <div className="flex items-baseline justify-between gap-2">
+    <div className="flex items-start justify-between gap-2">
       <div className="min-w-0">
-        <h1 className="truncate text-2xl font-bold">{name ? `${name}님` : '홈'}</h1>
+        <h1 className="text-xl font-bold break-keep">
+          {name ? `${name}님, ` : ''}
+          {greeting}
+        </h1>
         <p className="text-sm text-slate-500">
           {date}
           {sports?.length ? ` · ${sports.join(' · ')}` : ''}
         </p>
       </div>
-      {streak >= 2 && <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 tabular-nums">🔥 {streak}일 연속 러닝</span>}
+      {streak >= 2 && <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 tabular-nums">🔥 {streak}일 연속 러닝</span>}
     </div>
   )
 }
