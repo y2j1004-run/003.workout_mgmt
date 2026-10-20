@@ -71,27 +71,33 @@ function mergeAppEdits(next: DayEntry, prev?: DayEntry): DayEntry {
   const fromLog = prev.activities.filter((p) => !p.source)
   const activities: Activity[] = next.activities.map((a, i) => {
     const before = fromLog[i]
-    if (!before || !sameRun(before.distanceKm, a.distanceKm)) return a
+    if (!before || !sameRun(before.appEdits?.logDistanceKm ?? before.distanceKm, a.distanceKm)) return a
     const carried = { ...a, shoe: a.shoe ?? before.shoe, garmin: before.garmin, durationSec: a.durationSec ?? before.durationSec, paceSecPerKm: a.paceSecPerKm ?? before.paceSecPerKm }
     return before.appEdits ? applyRaceEdits(carried, before.appEdits) : carried
   })
   for (const extra of prev.activities.filter((p) => p.source)) {
     // a watch run that now also appears in the log joins that run instead of being counted twice
-    const twin = extra.source === 'garmin' && activities.find((a) => !a.garmin && !a.source && sameRun(a.distanceKm, extra.distanceKm))
+    const twin = extra.source === 'garmin' && !extra.deleted && activities.find((a) => !a.garmin && !a.source && !a.deleted && sameRun(a.distanceKm, extra.distanceKm))
     if (twin) Object.assign(twin, { garmin: extra.garmin, shoe: twin.shoe ?? extra.shoe, durationSec: twin.durationSec ?? extra.durationSec, paceSecPerKm: twin.paceSecPerKm ?? extra.paceSecPerKm })
     else activities.push(extra)
   }
   return { ...next, activities }
 }
 
-/** Applies race corrections and recomputes pace from the race distance. */
+/** Applies the user's corrections and recomputes pace from the race (or run) distance. */
 export function applyRaceEdits(a: Activity, edits: RaceEdits): Activity {
   const next: Activity = { ...a, appEdits: { ...a.appEdits, ...edits } }
+  if (edits.distanceKm !== undefined && edits.distanceKm !== a.distanceKm) {
+    if (!a.source && next.appEdits!.logDistanceKm === undefined) next.appEdits!.logDistanceKm = a.distanceKm
+    next.distanceKm = edits.distanceKm
+  }
+  if (edits.place !== undefined) next.place = edits.place || undefined
+  if (edits.deleted !== undefined) next.deleted = edits.deleted || undefined
   if (edits.race !== undefined) next.race = edits.race
   if (edits.event !== undefined) next.event = edits.event || undefined
   if (edits.raceDistanceKm !== undefined) next.raceDistanceKm = edits.raceDistanceKm ?? undefined
   if (edits.durationSec !== undefined) next.durationSec = edits.durationSec ?? undefined
-  if (next.durationSec) next.paceSecPerKm = Math.round(next.durationSec / (next.raceDistanceKm ?? next.distanceKm))
+  if (next.durationSec && (edits.durationSec !== undefined || edits.distanceKm !== undefined || edits.raceDistanceKm !== undefined)) next.paceSecPerKm = Math.round(next.durationSec / (next.raceDistanceKm ?? next.distanceKm))
   else if (edits.durationSec === null) next.paceSecPerKm = undefined
   // otherwise keep a pace written in the log ("평페 434")
   return next
@@ -105,6 +111,50 @@ export async function editRace(date: string, index: number, edits: RaceEdits) {
     const activities = day.activities.map((a, i) => (i === index ? applyRaceEdits(a, edits) : a))
     await db.days.put({ ...day, activities, savedAt: Date.now() })
   })
+}
+
+export interface RunChanges {
+  date: string
+  distanceKm: number
+  place?: string
+  durationSec?: number
+}
+
+/**
+ * Edits a run. Changing the date moves it: the run becomes an app-entered run on the new day,
+ * and the original is marked deleted so a re-import of the log doesn't put it back.
+ */
+export async function editRun(date: string, index: number, c: RunChanges) {
+  await db.transaction('rw', db.days, async () => {
+    const day = await db.days.get(date)
+    const run = day?.activities[index]
+    if (!day || !run) return
+    const edits: RaceEdits = { distanceKm: c.distanceKm, place: c.place ?? null, durationSec: c.durationSec ?? null }
+    if (c.date === date) {
+      const activities = day.activities.map((a, i) => (i === index ? applyRaceEdits(a, edits) : a))
+      await db.days.put({ ...day, activities, savedAt: Date.now() })
+      return
+    }
+    const moved = applyRaceEdits({ ...run, source: 'app', appEdits: undefined }, edits)
+    await db.days.put({ ...day, activities: removeRun(day.activities, index), savedAt: Date.now() })
+    const target = (await db.days.get(c.date)) ?? emptyDay(c.date)
+    await db.days.put({ ...target, activities: [...target.activities, moved], savedAt: Date.now() })
+  })
+}
+
+/** Deletes a run: app-entered runs are removed, logged or watch runs are marked deleted. */
+export async function deleteRun(date: string, index: number) {
+  await db.transaction('rw', db.days, async () => {
+    const day = await db.days.get(date)
+    if (!day?.activities[index]) return
+    await db.days.put({ ...day, activities: removeRun(day.activities, index), savedAt: Date.now() })
+  })
+}
+
+function removeRun(activities: Activity[], index: number): Activity[] {
+  return activities[index].source === 'app'
+    ? activities.filter((_, i) => i !== index)
+    : activities.map((a, i) => (i === index ? applyRaceEdits(a, { deleted: true }) : a))
 }
 
 /** Adds a race that is not in the log as a run of its own. */

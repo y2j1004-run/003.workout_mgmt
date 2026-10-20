@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type ReactNode } from 'react'
 import { fmtTime, shoeTotals } from '../analytics/stats'
 import ShoePicker from '../components/ShoePicker'
-import { addRun, db, setRunShoe, updateShoe, type StoredDay } from '../db/db'
+import { addRun, db, deleteRun, editRun, setRunShoe, updateShoe, type StoredDay } from '../db/db'
+import type { Activity } from '../import/parseLog'
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
@@ -78,10 +79,11 @@ function RunForm({ shoes }: { shoes: string[] }) {
 function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
   const [onlyMissing, setOnlyMissing] = useState(false)
   const [editing, setEditing] = useState<string>()
+  const [editingRun, setEditingRun] = useState<string>()
   const [limit, setLimit] = useState(15)
   const runs = days
     .flatMap((d) => d.activities.map((a, i) => ({ ...a, date: d.date, index: i })))
-    .filter((a) => a.kind === 'run' && (!onlyMissing || !a.shoe))
+    .filter((a) => a.kind === 'run' && !a.deleted && (!onlyMissing || !a.shoe))
     .reverse()
 
   if (!days.length) {
@@ -104,7 +106,7 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
           return (
             <li key={key} className="py-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0 text-sm">
+                <button onClick={() => setEditingRun(editingRun === key ? undefined : key)} className="min-w-0 flex-1 text-left text-sm" aria-label="러닝 수정">
                   <span className="font-semibold tabular-nums">{r.date.slice(2).replaceAll('-', '.')}</span>
                   <span className="ml-2 tabular-nums">{km(r.distanceKm)}</span>
                   {(r.event || r.place) && <span className="ml-1 truncate text-xs text-slate-500">· {r.event ?? r.place}</span>}
@@ -115,7 +117,7 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
                       {r.garmin.cadence ? ` · ${r.garmin.cadence}spm` : ''}
                     </div>
                   )}
-                </div>
+                </button>
                 <button
                   onClick={() => setEditing(editing === key ? undefined : key)}
                   className={`shrink-0 rounded-full px-3 py-1 text-xs ${r.shoe ? 'bg-slate-100 text-slate-700' : 'border border-amber-400 text-amber-700'}`}
@@ -123,6 +125,7 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
                   {r.shoe ? `👟 ${r.shoe}` : '신발 선택'}
                 </button>
               </div>
+              {editingRun === key && <RunEditor run={r} onDone={() => setEditingRun(undefined)} />}
               {editing === key && (
                 <div className="mt-2">
                   <ShoePicker
@@ -141,12 +144,109 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
           )
         })}
       </ul>
+      <p className="mt-2 text-xs text-slate-400">날짜나 거리를 누르면 수정·삭제할 수 있습니다.</p>
       {runs.length > limit && (
         <button onClick={() => setLimit(limit + 30)} className="mt-2 w-full rounded-lg bg-slate-100 py-2 text-sm">
           더 보기 ({runs.length - limit}개 남음)
         </button>
       )}
     </Card>
+  )
+}
+
+function RunEditor({ run, onDone }: { run: Activity & { date: string; index: number }; onDone: () => void }) {
+  const [date, setDate] = useState(run.date)
+  const [distance, setDistance] = useState(String(run.distanceKm))
+  const [place, setPlace] = useState(run.place ?? '')
+  const [time, setTime] = useState(() => {
+    const t = run.durationSec ?? 0
+    return t ? { h: String(Math.floor(t / 3600)), m: String(Math.floor((t % 3600) / 60)), s: String(t % 60) } : { h: '', m: '', s: '' }
+  })
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const key = `${run.date}-${run.index}`
+  const valid = Number(distance) > 0 && !!date
+  const seconds = Number(time.h || 0) * 3600 + Number(time.m || 0) * 60 + Number(time.s || 0)
+
+  return (
+    <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
+      <div className="flex gap-2">
+        <label className="flex-1 text-xs text-slate-500">
+          날짜
+          <input id={`run-date-${key}`} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
+        </label>
+        <label className="w-24 text-xs text-slate-500">
+          거리(km)
+          <input
+            id={`run-km-${key}`}
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={distance}
+            onChange={(e) => setDistance(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+          />
+        </label>
+      </div>
+      <label className="block text-xs text-slate-500">
+        장소
+        <input id={`run-place-${key}`} value={place} onChange={(e) => setPlace(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900" />
+      </label>
+      <div className="text-xs text-slate-500">
+        기록 (선택)
+        <div className="mt-1 flex items-center gap-1 text-sm text-slate-900 tabular-nums">
+          {(['h', 'm', 's'] as const).map((k, i) => (
+            <span key={k} className="flex items-center gap-1">
+              <input
+                id={`run-${k}-${key}`}
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={time[k]}
+                onChange={(e) => setTime({ ...time, [k]: e.target.value })}
+                className="w-14 rounded-lg border border-slate-300 px-2 py-1 text-right"
+              />
+              <span className="text-xs text-slate-500">{['시간', '분', '초'][i]}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          disabled={!valid}
+          onClick={async () => {
+            await editRun(run.date, run.index, { date, distanceKm: Number(distance), place: place.trim() || undefined, durationSec: seconds || undefined })
+            onDone()
+          }}
+          className="flex-1 rounded-lg bg-teal-700 py-2 font-semibold text-white disabled:opacity-40"
+        >
+          저장
+        </button>
+        <button onClick={onDone} className="rounded-lg bg-slate-200 px-4 py-2">
+          취소
+        </button>
+      </div>
+      {confirmDelete ? (
+        <div className="flex items-center gap-2">
+          <span className="flex-1 text-xs text-red-700">이 러닝을 삭제할까요?</span>
+          <button onClick={() => setConfirmDelete(false)} className="rounded-lg bg-slate-200 px-3 py-1.5">
+            아니요
+          </button>
+          <button
+            onClick={async () => {
+              await deleteRun(run.date, run.index)
+              onDone()
+            }}
+            className="rounded-lg bg-red-600 px-3 py-1.5 font-semibold text-white"
+          >
+            삭제
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => setConfirmDelete(true)} className="w-full rounded-lg border border-red-300 py-2 text-red-700">
+          삭제…
+        </button>
+      )}
+    </div>
   )
 }
 

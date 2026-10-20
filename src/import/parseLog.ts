@@ -25,8 +25,10 @@ export interface Activity {
   garmin?: GarminData
   /** set by the user: true/false overrides whether this run counts as a race */
   race?: boolean
-  /** race fields the user corrected in the app; re-applied when the text log is imported again */
+  /** fields the user corrected in the app; re-applied when the text log is imported again */
   appEdits?: RaceEdits
+  /** deleted in the app; kept as a marker so re-importing the log or a Garmin file doesn't bring it back */
+  deleted?: boolean
   companions: string[]
   /** training content such as "인터벌", "500*5km, 436*5km" */
   details: string[]
@@ -37,6 +39,11 @@ export interface Activity {
 }
 
 export interface RaceEdits {
+  distanceKm?: number
+  /** the distance the log had before the user changed it, used to recognize the run on re-import */
+  logDistanceKm?: number
+  place?: string | null
+  deleted?: boolean
   race?: boolean
   event?: string
   /** null clears the value */
