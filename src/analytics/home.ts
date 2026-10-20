@@ -1,5 +1,6 @@
 import type { DayEntry } from '../import/parseLog'
 import { addDays, round1, runsOf } from './stats'
+import { didStrength } from './workouts'
 
 /** Monday of the week containing `date` (weeks run Monday to Sunday). */
 export function weekStart(date: string): string {
@@ -33,7 +34,7 @@ export function weekSummary(days: DayEntry[], today: string): WeekSummary {
     km: round1(thisWeek.reduce((s, r) => s + r.distanceKm, 0)),
     runs: thisWeek.length,
     runDays: new Set(thisWeek.map((r) => r.date)).size,
-    strengthDays: days.filter((d) => d.date >= start && d.date <= today && d.strength?.done).length,
+    strengthDays: days.filter((d) => d.date >= start && d.date <= today && didStrength(d)).length,
     lastWeekKmSoFar: round1(inRange(lastStart, addDays(lastStart, elapsed)).reduce((s, r) => s + r.distanceKm, 0)),
   }
 }

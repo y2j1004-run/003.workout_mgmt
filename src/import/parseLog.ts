@@ -6,11 +6,17 @@
 
 import { CREWS, HALF_MARATHON_KM, SHOE_ALIASES, SHOES } from './dictionary'
 
-export type ActivityKind = 'run' | 'walk'
+/** run and walk come from the log; the rest are entered in the app */
+export type ActivityKind = 'run' | 'walk' | 'hike' | 'strength' | 'sport'
 
 export interface Activity {
   kind: ActivityKind
+  /** 0 for workouts without a distance (strength, ball sports) */
   distanceKm: number
+  /** for kind 'sport': which sport ("축구", "탁구", ...) */
+  sport?: string
+  /** for kind 'strength': exercises done ("스쿼트", "랫풀다운", ...) */
+  exercises?: string[]
   place?: string
   /** race or group run: "경기마라톤", "가우스 달벙" */
   event?: string

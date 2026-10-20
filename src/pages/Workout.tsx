@@ -5,6 +5,8 @@ import { fmtTime, runsOf, shoeTotals } from '../analytics/stats'
 import { INTENSITY_CHIP } from '../components/FitnessCards'
 import ShoePicker from '../components/ShoePicker'
 import ThemePicker from '../components/ThemePicker'
+import { StrengthForm, WorkoutForm, WorkoutHistory } from '../components/WorkoutForms'
+import { WORKOUT_TYPES } from '../analytics/workouts'
 import { themeOf } from '../analytics/themes'
 import { addRun, db, deleteRun, editRun, setRunShoe, updateShoe, type StoredDay } from '../db/db'
 import { getProfile } from '../db/profile'
@@ -13,10 +15,30 @@ import type { Activity } from '../import/parseLog'
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
 
+const MENU_KEY = 'workout-menu'
+
+function savedMenu(): string {
+  try {
+    return localStorage.getItem(MENU_KEY) ?? '러닝'
+  } catch {
+    return '러닝'
+  }
+}
+
 export default function Workout() {
   const days = useLiveQuery(() => db.days.orderBy('date').toArray())
   const shoes = useLiveQuery(() => db.shoes.toArray())
+  const [menu, setMenu] = useState(savedMenu)
   if (!days || !shoes) return null
+  const type = WORKOUT_TYPES.find((t) => t.label === menu) ?? WORKOUT_TYPES[0]
+  const pick = (label: string) => {
+    setMenu(label)
+    try {
+      localStorage.setItem(MENU_KEY, label)
+    } catch {
+      // remembering the menu is only a convenience
+    }
+  }
 
   const totals = shoeTotals(days, shoes)
   // shoes in rotation, most recently used first
@@ -28,9 +50,30 @@ export default function Workout() {
   return (
     <section className="space-y-4">
       <h1 className="text-2xl font-bold">운동</h1>
-      <RunForm shoes={active} places={recentPlaces(days)} />
-      <RecentRuns days={days} shoes={active} />
-      <MyShoes totals={totals} />
+      <nav aria-label="운동 종류" className="flex flex-wrap gap-1.5">
+        {WORKOUT_TYPES.map((t) => (
+          <button
+            key={t.label}
+            onClick={() => pick(t.label)}
+            aria-pressed={t === type}
+            className={`shrink-0 rounded-full px-4 py-1.5 text-sm ${t === type ? 'bg-teal-700 font-semibold text-white' : 'bg-white text-slate-700 shadow-sm'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      {type.kind === 'run' ? (
+        <>
+          <RunForm shoes={active} places={recentPlaces(days)} />
+          <RecentRuns days={days} shoes={active} />
+          <MyShoes totals={totals} />
+        </>
+      ) : (
+        <>
+          {type.kind === 'strength' ? <StrengthForm days={days} /> : <WorkoutForm key={type.label} type={type} days={days} />}
+          <WorkoutHistory type={type} days={days} />
+        </>
+      )}
     </section>
   )
 }

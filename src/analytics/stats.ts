@@ -1,4 +1,5 @@
 import type { Activity, DayEntry } from '../import/parseLog'
+import { didStrength } from './workouts'
 
 export interface DatedActivity extends Activity {
   date: string
@@ -137,7 +138,7 @@ export function summary(days: DayEntry[], today: string): Summary {
     year,
     weeklyAvgKm4w: round1(sumKm(runs.filter((r) => r.date >= from && r.date <= today)) / 4),
     runDays: new Set(runs.map((r) => r.date)).size,
-    strengthDays: days.filter((d) => d.strength?.done).length,
+    strengthDays: days.filter(didStrength).length,
     lastBodyFat: bf.at(-1),
     firstBodyFat: bf[0],
   }
