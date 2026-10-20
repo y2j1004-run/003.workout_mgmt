@@ -8,6 +8,8 @@ export interface Profile {
   heightCm?: number
   /** the birth year is enough for age-based ranges */
   birthYear?: number
+  /** max heart rate as set in Garmin's heart rate zones */
+  maxHr?: number
 }
 
 export interface Vo2Entry {

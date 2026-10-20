@@ -7,6 +7,7 @@ export default function ProfileCard() {
   const [sex, setSex] = useState<Sex>()
   const [height, setHeight] = useState('')
   const [birthYear, setBirthYear] = useState('')
+  const [maxHr, setMaxHr] = useState('')
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -14,18 +15,21 @@ export default function ProfileCard() {
     setSex(saved.sex)
     setHeight(saved.heightCm ? String(saved.heightCm) : '')
     setBirthYear(saved.birthYear ? String(saved.birthYear) : '')
+    setMaxHr(saved.maxHr ? String(saved.maxHr) : '')
   }, [saved])
 
   const year = new Date().getFullYear()
   const h = Number(height)
   const y = Number(birthYear)
   const heightOk = !height.trim() || (h >= 100 && h <= 230)
+  const m = Number(maxHr)
+  const maxOk = !maxHr.trim() || (Number.isInteger(m) && m >= 120 && m <= 230)
   const yearOk = !birthYear.trim() || (Number.isInteger(y) && y >= year - 100 && y <= year - 10)
 
   return (
     <div className="rounded-xl bg-white p-4 shadow-sm">
       <h2 className="mb-1 font-semibold">내 정보</h2>
-      <p className="mb-3 text-sm text-slate-500">인바디 해석 기준, VO2max 나이대 비교, 러닝 강도(최대 심박 추정)에 씁니다. 이 휴대폰과 백업 파일에만 저장됩니다.</p>
+      <p className="mb-3 text-sm text-slate-500">인바디 해석 기준, VO2max 나이대 비교, 러닝 강도(심박존)에 씁니다. 이 휴대폰과 백업 파일에만 저장됩니다.</p>
       <div className="mb-2 flex gap-2" role="radiogroup" aria-label="성별">
         {(
           [
@@ -69,16 +73,30 @@ export default function ProfileCard() {
             className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-base text-slate-900"
           />
         </label>
+        <label className="col-span-2 text-xs text-slate-500">
+          최대 심박수 (bpm) — 가민 Connect → 심박존 → 러닝 영역의 값
+          <input
+            id="profile-max-hr"
+            type="number"
+            inputMode="numeric"
+            placeholder="비워 두면 나이·기록으로 추정"
+            value={maxHr}
+            onChange={(e) => setMaxHr(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-base text-slate-900"
+          />
+        </label>
       </div>
+      {!maxOk && <p className="mt-2 text-xs text-amber-700">최대 심박수는 120~230 사이로 넣어 주세요.</p>}
       {!heightOk && <p className="mt-2 text-xs text-amber-700">키는 100~230cm 사이로 넣어 주세요.</p>}
       {!yearOk && <p className="mt-2 text-xs text-amber-700">출생 연도를 네 자리로 넣어 주세요.</p>}
       <button
-        disabled={!heightOk || !yearOk}
+        disabled={!heightOk || !yearOk || !maxOk}
         onClick={async () => {
           const p: Profile = {}
           if (sex) p.sex = sex
           if (height.trim()) p.heightCm = h
           if (birthYear.trim()) p.birthYear = y
+          if (maxHr.trim()) p.maxHr = m
           await setProfile(p)
           setMsg('저장했습니다.')
         }}

@@ -45,7 +45,7 @@ export default function Stats() {
   const crews = crewCounts(days)
   const lastBf = bodyFat.at(-1)
   const age = ageOn(profile.birthYear, today())
-  const maxHr = maxHeartRate(runsOf(days), age)
+  const maxHr = maxHeartRate(runsOf(days), age, profile.maxHr)
   const bfChange = lastBf && bodyFat.length > 1 ? lastBf.value - bodyFat[0].value : undefined
 
   const sections: Record<StatsSectionId, ReactNode> = {
@@ -81,7 +81,7 @@ export default function Stats() {
       </Card>
     ),
     vo2max: <Vo2Card days={days} entries={vo2} profile={profile} />,
-    intensity: <IntensityCard days={days} maxHr={maxHr} hasAge={age != null} />,
+    intensity: <IntensityCard days={days} maxHr={maxHr} fromProfile={!!profile.maxHr} />,
     races: <RaceRecords days={days} />,
     crews: crews.length > 0 && (
       <Card title="크루 활동">

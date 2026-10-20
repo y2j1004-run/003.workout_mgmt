@@ -1,6 +1,7 @@
 // Age-based running numbers: VO2max level for the age group and run intensity from heart rate.
 // VO2max bands: the Cooper Institute table Garmin uses for its fitness levels.
-// Max heart rate: Tanaka (208 − 0.7 × age), raised to the highest max HR the watch has recorded.
+// Max heart rate: the value set in Garmin's heart rate zones if given; otherwise Tanaka (208 − 0.7 × age),
+// raised to the highest max HR the watch has recorded. Zones follow Garmin's default % of max HR.
 
 import type { DayEntry } from '../import/parseLog'
 import type { Sex, Vo2Entry } from '../db/profile'
@@ -66,20 +67,31 @@ export interface MaxHr {
   basis: string
 }
 
-/** Tanaka estimate from age, or the watch's highest recorded max HR if that is higher. */
-export function maxHeartRate(runs: DatedActivity[], age?: number): MaxHr | undefined {
+/** The max HR the user set (as in Garmin), else the Tanaka estimate or the watch's highest recorded max HR. */
+export function maxHeartRate(runs: DatedActivity[], age?: number, setBpm?: number): MaxHr | undefined {
+  if (setBpm) return { bpm: setBpm, basis: '내 정보에 넣은 값' }
   const seen = Math.max(0, ...runs.map((r) => r.garmin?.maxHr ?? 0).filter((v) => v <= 220))
   const est = age != null ? Math.round(208 - 0.7 * age) : 0
   if (!seen && !est) return undefined
   return seen > est ? { bpm: seen, basis: '시계에 기록된 최고 심박' } : { bpm: est, basis: `나이(${age}세)로 추정` }
 }
 
-/** Average HR below 80% of max is easy, below 88% tempo, above that hard. */
-export function intensityOf(run: DatedActivity, max: MaxHr | undefined): Intensity | undefined {
+/** Lower bounds of zones 1–5 in bpm (50/60/70/80/90% of max), rounded like Garmin shows them. */
+export function zoneBounds(max: MaxHr): number[] {
+  return [0.5, 0.6, 0.7, 0.8, 0.9].map((p) => Math.round(max.bpm * p))
+}
+
+/** Garmin zone (1–5) of the run's average heart rate. */
+export function zoneOf(run: DatedActivity, max: MaxHr | undefined): number | undefined {
   const hr = run.garmin?.avgHr
   if (!hr || !max) return undefined
-  const p = hr / max.bpm
-  return p < 0.8 ? 'easy' : p < 0.88 ? 'tempo' : 'hard'
+  return Math.max(1, zoneBounds(max).filter((b) => hr >= b).length)
+}
+
+/** Zones 1–3 are easy, zone 4 tempo, zone 5 hard. */
+export function intensityOf(run: DatedActivity, max: MaxHr | undefined): Intensity | undefined {
+  const z = zoneOf(run, max)
+  return z == null ? undefined : z <= 3 ? 'easy' : z === 4 ? 'tempo' : 'hard'
 }
 
 export interface IntensityMix {
