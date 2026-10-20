@@ -1,7 +1,8 @@
 // InBody measurements. Values come from a result sheet (read from a photo), from the
-// "신체변화" history strip on a sheet (last 8 measurements, fewer fields), or typed in.
+// "신체변화" history strip on a sheet (last 8 measurements, fewer fields), typed in,
+// or the body fat / blood pressure / weight written in the workout text log.
 
-export type InBodySource = 'sheet' | 'history' | 'manual'
+export type InBodySource = 'sheet' | 'history' | 'manual' | 'log'
 
 export interface InBodyRecord {
   date: string // YYYY-MM-DD
@@ -32,8 +33,8 @@ export interface InBodyRecord {
 export type Segment = 'rightArm' | 'leftArm' | 'trunk' | 'rightLeg' | 'leftLeg'
 export const SEGMENTS: Segment[] = ['rightArm', 'leftArm', 'trunk', 'rightLeg', 'leftLeg']
 
-// A full sheet beats a typed entry, which beats the short history strip.
-const RANK: Record<InBodySource, number> = { history: 1, manual: 2, sheet: 3 }
+// A full sheet beats a typed entry, which beats the short history strip, which beats the log.
+const RANK: Record<InBodySource, number> = { log: 0, history: 1, manual: 2, sheet: 3 }
 
 /** Combines records for the same date: the better source wins, missing fields are filled from the other. */
 export function mergeRecord(existing: InBodyRecord | undefined, incoming: InBodyRecord): InBodyRecord {
@@ -45,6 +46,20 @@ export function mergeRecord(existing: InBodyRecord | undefined, incoming: InBody
 
 function stripUndefined<T extends object>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
+}
+
+/**
+ * Adds the measurements written in the workout log to the saved records. Log values only
+ * fill dates and fields the saved records leave empty; nothing is written to the database.
+ */
+export function withLogRecords(records: InBodyRecord[], days: { date: string; metrics: { bodyFatPct?: number; systolicBp?: number; weightKg?: number } }[]): InBodyRecord[] {
+  const byDate = new Map(records.map((r) => [r.date, r]))
+  for (const d of days) {
+    const { bodyFatPct, systolicBp, weightKg } = d.metrics
+    if (bodyFatPct == null && systolicBp == null && weightKg == null) continue
+    byDate.set(d.date, mergeRecord(byDate.get(d.date), { date: d.date, source: 'log', bodyFatPct, systolicBp, weightKg }))
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
 // Paste format (one measurement per line, header optional; trailing columns may be left out):
