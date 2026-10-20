@@ -5,7 +5,7 @@ export interface DatedActivity extends Activity {
 }
 
 export const runsOf = (days: DayEntry[]): DatedActivity[] =>
-  days.flatMap((d) => d.activities.filter((a) => a.kind === 'run').map((a) => ({ ...a, date: d.date })))
+  days.flatMap((d) => d.activities.filter((a) => a.kind === 'run' && !a.deleted).map((a) => ({ ...a, date: d.date })))
 
 const sumKm = (acts: Activity[]) => round1(acts.reduce((s, a) => s + a.distanceKm, 0))
 export const round1 = (n: number) => Math.round(n * 10) / 10
@@ -88,7 +88,7 @@ export interface RaceRow extends DatedActivity {
 export function races(days: DayEntry[]): RaceRow[] {
   return days
     .flatMap((d) => d.activities.map((a, index) => ({ ...a, date: d.date, index })))
-    .filter((a) => a.kind === 'run' && isRace(a))
+    .filter((a) => a.kind === 'run' && !a.deleted && isRace(a))
     .sort((a, b) => b.date.localeCompare(a.date))
 }
 

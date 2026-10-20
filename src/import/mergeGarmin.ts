@@ -50,6 +50,7 @@ export function mergeGarmin(
       fillFromGarmin(same)
       stats.updated++
     } else {
+      // a deleted run still matches, so the watch copy of a run the user removed stays removed
       const match = day.activities.find((a) => !a.garmin && a.kind === g.kind && sameRun(a.distanceKm, g.distanceKm))
       if (match) {
         match.garmin = data
