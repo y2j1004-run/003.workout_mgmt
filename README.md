@@ -15,7 +15,13 @@ npm install
 npm run dev       # 개발 서버
 npm run build     # 타입 검사 + 빌드 (dist/)
 npm run icons     # 앱 아이콘 다시 생성 (Python + Pillow)
+npm run build:preview -- preview.html   # 미리보기용 단일 HTML 파일 생성
 ```
+
+## 미리보기
+
+변경 사항은 `main`에 머지(= 설치된 앱에 반영)하기 전에, 단일 HTML 미리보기 파일로 만들어
+휴대폰 브라우저에서 먼저 확인합니다. 미리보기에는 오프라인 기능(service worker)이 빠져 있습니다.
 
 ## 배포 (GitHub Pages)
 

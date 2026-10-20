@@ -4,14 +4,16 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // GitHub Pages serves the app under /<repo-name>/
-const base = process.env.GITHUB_PAGES ? '/003.workout_mgmt/' : '/'
+// PREVIEW builds a single-page preview without the service worker (see scripts/build_preview.mjs)
+const preview = !!process.env.PREVIEW
+const base = preview ? './' : process.env.GITHUB_PAGES ? '/003.workout_mgmt/' : '/'
 
 export default defineConfig({
   base,
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
+    !preview && VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png'],
       manifest: {
