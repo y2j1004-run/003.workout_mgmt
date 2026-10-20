@@ -6,6 +6,7 @@ import {
   vo2FitnessGroup,
   vo2Level,
   vo2Series,
+  zoneBounds,
   type Intensity,
   type MaxHr,
 } from '../analytics/fitness'
@@ -126,18 +127,19 @@ function Vo2Entries({ entries }: { entries: Vo2Entry[] }) {
   )
 }
 
-export function IntensityCard({ days, maxHr, hasAge }: { days: DayEntry[]; maxHr?: MaxHr; hasAge: boolean }) {
+export function IntensityCard({ days, maxHr, fromProfile }: { days: DayEntry[]; maxHr?: MaxHr; fromProfile: boolean }) {
   const now = today()
   const windows = [
     { label: '최근 4주', mix: intensityMix(days, maxHr, addDays(now, -27), now) },
     { label: '최근 12주', mix: intensityMix(days, maxHr, addDays(now, -83), now) },
   ]
   const share = windows[0].mix.easyShare ?? windows[1].mix.easyShare
+  const bounds = maxHr ? zoneBounds(maxHr) : []
 
   return (
     <Card title="러닝 강도" note={maxHr ? `최대 심박 ${maxHr.bpm}` : undefined}>
       {!maxHr ? (
-        <p className="text-sm text-slate-500">⚙️ 설정 → 내 정보에 출생 연도를 넣거나, 심박이 담긴 가민 CSV를 가져오면 러닝마다 강도를 나눕니다.</p>
+        <p className="text-sm text-slate-500">⚙️ 설정 → 내 정보에 최대 심박수(가민 심박존)나 출생 연도를 넣거나, 심박이 담긴 가민 CSV를 가져오면 러닝마다 강도를 나눕니다.</p>
       ) : (
         <>
           <div className="space-y-3">
@@ -182,9 +184,9 @@ export function IntensityCard({ days, maxHr, hasAge }: { days: DayEntry[]; maxHr
                 : `쉬운 러닝이 ${Math.round(share * 100)}%입니다. 권장은 약 80%라, 쉬운 날의 페이스를 조금 늦추면 회복과 지구력 향상에 도움이 됩니다.`}
             </p>
           )}
-          <p className="mt-2 text-xs text-slate-400">
-            평균 심박이 최대 심박의 80% 미만이면 쉬움, 88% 미만이면 템포, 그 이상이면 고강도로 봅니다. 최대 심박은 {maxHr.basis}
-            {!hasAge && ' (출생 연도를 넣으면 나이로 추정한 값과 비교합니다)'}입니다.
+          <p className="mt-2 text-xs text-slate-400 tabular-nums">
+            가민 심박존처럼 평균 심박으로 나눕니다: 1~3영역({bounds[3]} 미만) 쉬움, 4영역({bounds[3]}~{bounds[4] - 1}) 템포, 5영역({bounds[4]} 이상) 고강도. 최대 심박 {maxHr.bpm}은 {maxHr.basis}입니다.
+            {!fromProfile && ' 가민 앱 심박존의 최대 심박수를 ⚙️ 설정 → 내 정보에 넣으면 가민과 똑같이 나눕니다.'}
           </p>
         </>
       )}
