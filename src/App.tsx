@@ -6,7 +6,7 @@ import InBody from './pages/InBody'
 import Stats from './pages/Stats'
 import Settings from './pages/Settings'
 
-const pages: Record<Tab, () => React.JSX.Element> = {
+const pages: Record<Tab, () => React.ReactNode> = {
   home: Home,
   workout: Workout,
   inbody: InBody,
