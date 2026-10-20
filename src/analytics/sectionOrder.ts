@@ -5,6 +5,8 @@ export const STATS_SECTIONS = [
   { id: 'monthly', title: '월별 러닝 거리' },
   { id: 'bodyFat', title: '체지방률' },
   { id: 'bp', title: '혈압' },
+  { id: 'vo2max', title: '체력 (VO2max)' },
+  { id: 'intensity', title: '러닝 강도' },
   { id: 'races', title: '대회 기록' },
   { id: 'crews', title: '크루 활동' },
   { id: 'shoes', title: '신발별 누적 거리' },

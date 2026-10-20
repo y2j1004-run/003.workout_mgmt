@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { assessInBody } from './assess'
-import { parseInBodyCsv } from './inbody'
+import { assessInBody, longTermChange } from './assess'
+import { parseInBodyCsv, type InBodyRecord } from './inbody'
 
 // made-up values in the same shape as a real sheet
 const csv = `2026-04-10,07:00,sheet,62.0,30.0,9.0,14.5,21.5,79,34.0,1530,0.372,105,65,70
@@ -54,5 +54,40 @@ describe('assessInBody', () => {
   it('lists what needs attention in the headline', () => {
     const a = assessInBody(parseInBodyCsv('2026-10-15,07:00,sheet,80,28,22,27.5,27.0,70,110,1500,0.395,135,85').records)!
     expect(a.headline).toMatch(/살펴볼 항목 5개/)
+  })
+})
+
+describe('assessInBody with a profile', () => {
+  const sheet: InBodyRecord = { date: '2026-01-10', source: 'sheet', weightKg: 70, bodyFatPct: 15, bmrKcal: 1600, smi: 7.5, abdominalFatRatio: 0.85 }
+
+  it('adds the age band and compares BMR with the expected value', () => {
+    const a = assessInBody([sheet], undefined, { sex: 'male', age: 40, heightCm: 175 })!
+    expect(a.items.find((i) => i.key === 'pbf')!.note).toContain('40~59세 건강 범위 11~21% 안')
+    const bmr = a.items.find((i) => i.key === 'bmr')!
+    expect(bmr.note).toContain('약 1599kcal')
+    expect(bmr.level).toBe('good')
+  })
+
+  it('uses the women ranges', () => {
+    const a = assessInBody([{ ...sheet, bodyFatPct: 24, smi: 6.0 }], undefined, { sex: 'female' })!
+    expect(a.items.find((i) => i.key === 'pbf')!.note).toContain('표준(18~28%)')
+    expect(a.items.find((i) => i.key === 'smi')!.level).toBe('good')
+  })
+})
+
+describe('longTermChange', () => {
+  it('splits the weight change into fat and lean mass, borrowing weight from the next day', () => {
+    const lt = longTermChange(
+      [
+        { date: '2025-01-04', source: 'manual', weightKg: 80 },
+        { date: '2025-01-05', source: 'log', bodyFatPct: 25 },
+        { date: '2026-01-10', source: 'sheet', weightKg: 70, bodyFatPct: 15, bmi: 22.9 },
+      ],
+      {},
+    )!
+    expect(lt.from).toBe('2025-01-05')
+    expect(lt.fatKg).toEqual([20, 10.5])
+    expect(lt.leanKg).toEqual([60, 59.5])
+    expect(lt.bmi).toEqual([26.2, 22.9])
   })
 })

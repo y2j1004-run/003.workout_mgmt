@@ -1,9 +1,17 @@
 // Turns InBody records into a plain-language "current level" summary.
 // Reference values: the standard ranges printed on the InBody 970 sheet, the InBody visceral fat
-// threshold (100cm²), the Asian BMI bands and the AWGS 2019 low-muscle cutoff (SMI < 7.0 kg/m², men, BIA).
-// The ranges assume an adult man, which is who this app is built for.
+// threshold (100cm²), the Asian BMI bands, the AWGS 2019 low-muscle cutoffs (SMI < 7.0 men, < 5.7 women, BIA),
+// the age bands for healthy body fat from Gallagher et al. 2000 and the Mifflin-St Jeor BMR equation.
+// Without a profile the ranges assume an adult man.
 
+import type { Profile, Sex } from '../db/profile'
 import type { InBodyRecord } from './inbody'
+
+export interface Person {
+  sex?: Sex
+  age?: number
+  heightCm?: number
+}
 
 export type Level = 'good' | 'ok' | 'watch'
 
@@ -38,20 +46,25 @@ const r1 = (n: number) => Math.round(n * 10) / 10
  * `kmBefore` gives the running distance in the 7 days before a date, used to flag measurements
  * taken after a heavy week (water and glycogen loss lower weight and the ECW ratio).
  */
-export function assessInBody(records: InBodyRecord[], kmBefore?: (date: string) => number): Assessment | undefined {
+export function assessInBody(records: InBodyRecord[], kmBefore?: (date: string) => number, person: Person = {}): Assessment | undefined {
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date))
   const r = sorted.at(-1)
   if (!r) return undefined
   const items: AssessItem[] = []
   const suggestions: string[] = []
   const add = (key: string, label: string, value: string, level: Level, note: string) => items.push({ key, label, value, level, note })
+  const female = person.sex === 'female'
 
   if (r.bodyFatPct != null) {
     const p = r.bodyFatPct
-    if (p < 10) add('pbf', '체지방률', `${p}%`, 'watch', '표준(10~20%)보다 낮음. 에너지가 부족하지 않은지 살펴보세요.')
-    else if (p <= 15) add('pbf', '체지방률', `${p}%`, 'good', '표준(10~20%) 안에서도 낮은 편. 운동선수에 가까운 수준')
-    else if (p <= 20) add('pbf', '체지방률', `${p}%`, 'ok', '표준(10~20%) 범위')
-    else add('pbf', '체지방률', `${p}%`, 'watch', '표준(10~20%)보다 높음')
+    const [lo, hi] = female ? [18, 28] : [10, 20]
+    const std = `표준(${lo}~${hi}%)`
+    const band = person.age != null ? ageFatBand(person.age, female) : undefined
+    const ageNote = band ? ` · ${band.group} 건강 범위 ${band.lo}~${band.hi}%${p < band.lo ? '보다 낮음' : p > band.hi ? '보다 높음' : ' 안'}` : ''
+    if (p < lo) add('pbf', '체지방률', `${p}%`, 'watch', `${std}보다 낮음. 에너지가 부족하지 않은지 살펴보세요.${ageNote}`)
+    else if (p <= (lo + hi) / 2) add('pbf', '체지방률', `${p}%`, 'good', `${std} 안에서도 낮은 편. 운동선수에 가까운 수준${ageNote}`)
+    else if (p <= hi) add('pbf', '체지방률', `${p}%`, 'ok', `${std} 범위${ageNote}`)
+    else add('pbf', '체지방률', `${p}%`, 'watch', `${std}보다 높음${ageNote}`)
   }
   if (r.visceralFatArea != null) {
     const v = r.visceralFatArea
@@ -59,7 +72,9 @@ export function assessInBody(records: InBodyRecord[], kmBefore?: (date: string) 
   }
   if (r.abdominalFatRatio != null) {
     const w = r.abdominalFatRatio
-    add('whr', '복부지방률', `${w}`, w <= 0.9 ? 'good' : 'watch', w < 0.8 ? '표준(0.80~0.90)보다 낮음. 뱃살이 적음' : w <= 0.9 ? '표준(0.80~0.90) 범위' : '표준(0.80~0.90)보다 높음')
+    const [lo, hi] = female ? [0.75, 0.85] : [0.8, 0.9]
+    const std = `표준(${lo.toFixed(2)}~${hi.toFixed(2)})`
+    add('whr', '복부지방률', `${w}`, w <= hi ? 'good' : 'watch', w < lo ? `${std}보다 낮음. 뱃살이 적음` : w <= hi ? `${std} 범위` : `${std}보다 높음`)
   }
   if (r.bmi != null) {
     const b = r.bmi
@@ -67,7 +82,8 @@ export function assessInBody(records: InBodyRecord[], kmBefore?: (date: string) 
   }
   if (r.smi != null) {
     const s = r.smi
-    add('smi', '골격근지수(SMI)', `${s}kg/m²`, s >= 7.0 ? 'good' : 'watch', s >= 7.0 ? `근감소 기준(7.0)보다 ${r1(s - 7)} 높음` : '근감소 기준(7.0)보다 낮음')
+    const cut = female ? 5.7 : 7.0
+    add('smi', '골격근지수(SMI)', `${s}kg/m²`, s >= cut ? 'good' : 'watch', s >= cut ? `근감소 기준(${cut})보다 ${r1(s - cut)} 높음` : `근감소 기준(${cut})보다 낮음`)
   } else if (r.skeletalMuscleKg != null) {
     add('smm', '골격근량', `${r.skeletalMuscleKg}kg`, 'ok', '키 대비 지수(SMI)가 있으면 더 정확히 판단합니다')
   }
@@ -83,6 +99,17 @@ export function assessInBody(records: InBodyRecord[], kmBefore?: (date: string) 
     const dia = r.diastolicBp
     const level: Level = sys < 120 && dia < 80 ? 'good' : sys < 130 && dia < 80 ? 'ok' : 'watch'
     add('bp', '혈압', `${sys}/${dia}`, level, level === 'good' ? '정상(120/80 미만)' : level === 'ok' ? '주의 혈압(수축기 120~129)' : '높음(130/80 이상). 반복되면 확인해 보세요')
+  }
+  if (r.bmrKcal != null && r.weightKg != null && person.age != null && person.heightCm) {
+    const expected = Math.round(10 * r.weightKg + 6.25 * person.heightCm - 5 * person.age + (female ? -161 : 5))
+    const diff = Math.round(((r.bmrKcal - expected) / expected) * 100)
+    add(
+      'bmr',
+      '기초대사량',
+      `${r.bmrKcal}kcal`,
+      diff >= -3 ? 'good' : 'ok',
+      `같은 성별·나이·키·체중의 예상치(약 ${expected}kcal)보다 ${Math.abs(diff)}% ${diff >= 0 ? '높음' : '낮음'}${diff >= 3 ? '. 근육이 많은 편' : ''}`,
+    )
   }
   if (r.score != null) {
     add('score', '인바디 점수', `${r.score}점`, r.score >= 80 ? 'good' : 'ok', '근육량 비중이 큰 점수. 근육이 늘면 오릅니다')
@@ -155,6 +182,50 @@ export function assessInBody(records: InBodyRecord[], kmBefore?: (date: string) 
       : '주요 지표가 모두 정상 범위입니다.'
 
   return { date: r.date, headline, items, trends, suggestions }
+}
+
+/** Healthy body fat by age group (Gallagher et al. 2000). */
+function ageFatBand(age: number, female: boolean): { group: string; lo: number; hi: number } {
+  const [lo, hi] = age < 40 ? (female ? [21, 32] : [8, 19]) : age < 60 ? (female ? [23, 33] : [11, 21]) : female ? [24, 35] : [13, 24]
+  return { group: age < 40 ? '20~39세' : age < 60 ? '40~59세' : '60세 이상', lo, hi }
+}
+
+export interface LongTerm {
+  from: string
+  to: string
+  weightKg: [number, number]
+  fatKg: [number, number]
+  leanKg: [number, number]
+  bmi?: [number, number]
+}
+
+/**
+ * First and last measurements that have both weight and body fat %, to split the weight change
+ * into fat and lean mass. A body fat reading without weight borrows the weight taken a day before
+ * or after. Height comes from the profile, or from a sheet's BMI.
+ */
+export function longTermChange(records: InBodyRecord[], profile: Profile = {}): LongTerm | undefined {
+  const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date))
+  const weightNear = (r: InBodyRecord) =>
+    r.weightKg ?? sorted.find((x) => x.weightKg != null && Math.abs(Date.parse(x.date) - Date.parse(r.date)) <= 864e5)?.weightKg
+  const pairs = sorted.flatMap((r) => {
+    const w = weightNear(r)
+    return r.bodyFatPct != null && w != null ? [{ date: r.date, w, pbf: r.bodyFatPct }] : []
+  })
+  const a = pairs[0]
+  const b = pairs.at(-1)
+  if (!a || !b || a === b) return undefined
+  const withBmi = [...sorted].reverse().find((x) => x.bmi && x.weightKg)
+  const h = profile.heightCm ? profile.heightCm / 100 : withBmi ? Math.sqrt(withBmi.weightKg! / withBmi.bmi!) : undefined
+  const fat = (p: typeof a) => r1((p.w * p.pbf) / 100)
+  return {
+    from: a.date,
+    to: b.date,
+    weightKg: [a.w, b.w],
+    fatKg: [fat(a), fat(b)],
+    leanKg: [r1(a.w - fat(a)), r1(b.w - fat(b))],
+    bmi: h ? [r1(a.w / h / h), r1(b.w / h / h)] : undefined,
+  }
 }
 
 function avg(xs: (number | undefined)[]): number | undefined {

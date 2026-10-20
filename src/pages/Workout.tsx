@@ -1,10 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type ReactNode } from 'react'
-import { fmtTime, shoeTotals } from '../analytics/stats'
+import { ageOn, INTENSITY_LABEL, intensityOf, maxHeartRate } from '../analytics/fitness'
+import { fmtTime, runsOf, shoeTotals } from '../analytics/stats'
+import { INTENSITY_CHIP } from '../components/FitnessCards'
 import ShoePicker from '../components/ShoePicker'
 import ThemePicker from '../components/ThemePicker'
 import { themeOf } from '../analytics/themes'
 import { addRun, db, deleteRun, editRun, setRunShoe, updateShoe, type StoredDay } from '../db/db'
+import { getProfile } from '../db/profile'
 import type { Activity } from '../import/parseLog'
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
@@ -87,6 +90,8 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
   const [editing, setEditing] = useState<string>()
   const [editingRun, setEditingRun] = useState<string>()
   const [limit, setLimit] = useState(15)
+  const profile = useLiveQuery(getProfile)
+  const maxHr = maxHeartRate(runsOf(days), ageOn(profile?.birthYear, today()))
   const runs = days
     .flatMap((d) => d.activities.map((a, i) => ({ ...a, date: d.date, index: i })))
     .filter((a) => a.kind === 'run' && !a.deleted && (!onlyMissing || !a.shoe))
@@ -127,6 +132,10 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
                       ⌚ {r.garmin.durationSec ? `${fmtTime(r.garmin.durationSec)} · ${fmtTime(Math.round(r.garmin.durationSec / r.garmin.distanceKm))}/km` : `${r.garmin.distanceKm}km`}
                       {r.garmin.avgHr ? ` · 심박 ${r.garmin.avgHr}` : ''}
                       {r.garmin.cadence ? ` · ${r.garmin.cadence}spm` : ''}
+                      {(() => {
+                        const i = intensityOf(r, maxHr)
+                        return i ? <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[11px] ${INTENSITY_CHIP[i]}`}>{INTENSITY_LABEL[i]}</span> : null
+                      })()}
                     </div>
                   )}
                 </button>

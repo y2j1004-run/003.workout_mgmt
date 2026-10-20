@@ -2,6 +2,7 @@ import type { Goals } from '../analytics/home'
 import type { InBodyRecord } from '../inbody/inbody'
 import { getGoals, setGoals } from './goals'
 import { getStatsOrder, setStatsOrder } from './layout'
+import { getProfile, getVo2Entries, setProfile, setVo2Entries, type Profile, type Vo2Entry } from './profile'
 import { db, type Shoe, type StoredDay } from './db'
 
 const APP = 'workout-mgmt'
@@ -17,17 +18,21 @@ export interface Backup {
   inbody?: InBodyRecord[]
   goals?: Goals
   statsOrder?: string[]
+  profile?: Profile
+  vo2max?: Vo2Entry[]
 }
 
 export async function createBackup(): Promise<Backup> {
-  const [days, shoes, inbody, goals, statsOrder] = await Promise.all([
+  const [days, shoes, inbody, goals, statsOrder, profile, vo2max] = await Promise.all([
     db.days.orderBy('date').toArray(),
     db.shoes.toArray(),
     db.inbody.orderBy('date').toArray(),
     getGoals(),
     getStatsOrder(),
+    getProfile(),
+    getVo2Entries(),
   ])
-  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody, goals, statsOrder }
+  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody, goals, statsOrder, profile, vo2max }
 }
 
 export function backupFileName(b: Backup) {
@@ -66,6 +71,9 @@ export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ day
   return db.transaction('rw', db.days, db.shoes, db.inbody, db.meta, async () => {
     if (b.goals && (mode === 'replace' || !Object.keys(await getGoals()).length)) await setGoals(b.goals)
     if (b.statsOrder && (mode === 'replace' || !(await getStatsOrder()))) await setStatsOrder(b.statsOrder)
+    if (b.profile && (mode === 'replace' || !Object.keys(await getProfile()).length)) await setProfile(b.profile)
+    // the backup copy wins for the same date, like InBody records
+    if (b.vo2max) await setVo2Entries(mode === 'replace' ? b.vo2max : [...(await getVo2Entries()), ...b.vo2max])
     if (mode === 'replace') {
       await db.days.clear()
       await db.shoes.clear()
