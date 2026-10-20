@@ -1,4 +1,4 @@
-# 건강관리 현황 시스템 — 시스템 구조 (v0.3, Android PWA)
+# 건강관리 현황 시스템 — 시스템 구조 (v0.4, Android PWA)
 
 2024년 10월부터의 **운동 기록**과 **주 1회 인바디 기록**을 휴대폰 앱 하나로 기록·조회·분석하는 개인용 시스템입니다.
 
@@ -126,62 +126,62 @@ flowchart LR
 
 ## 5. 데이터 모델 (IndexedDB)
 
+실제 기록이 **러닝 중심의 하루 단위 메모**라서, 운동 세트 단위 표 대신 **하루 = 레코드 1개**로 저장합니다.
+(700일 남짓이라 통계는 매번 전체를 읽어 계산해도 충분히 빠릅니다.)
+
 ```mermaid
 erDiagram
-    EXERCISE ||--o{ WORKOUT_SET : "종류"
-    WORKOUT_SESSION ||--o{ WORKOUT_SET : "포함"
+    DAY ||--o{ ACTIVITY : "포함 (레코드 안에 배열로)"
     INBODY_MEASUREMENT
-    GOAL
 
-    EXERCISE {
-        string id PK
-        string name "벤치프레스"
-        string aliases "벤치, bench..."
-        string category "strength / cardio"
-        string body_part "가슴, 등, 하체..."
-        bool favorite
+    DAY {
+        string date PK "YYYY-MM-DD"
+        bool strength_done "웨이트 여부"
+        string strength_parts "가슴, 어깨, ..."
+        float bodyFatPct "체지방률"
+        int systolicBp "혈압 (수축기)"
+        float weightKg
+        float vo2max
+        int fastingHours "공복 시간"
+        bool stretching
+        bool rest
+        string notes "메모 (**, ※, - 줄)"
+        string issues "확인 필요 사항"
+        string raw "원문 줄"
     }
-    WORKOUT_SESSION {
-        string id PK
-        date date
-        int duration_min
-        string memo
-    }
-    WORKOUT_SET {
-        string id PK
-        string session_id FK
-        string exercise_id FK
-        int set_no
-        float weight_kg
-        int reps
-        float distance_km
-        int duration_sec
+    ACTIVITY {
+        string kind "run / walk"
+        float distanceKm
+        float raceDistanceKm "워밍업 포함일 때 대회 거리"
+        string place
+        string event "대회 / 모임"
+        string crew "가우스, Capy, m114"
+        string shoe "신발"
+        string companions "함께 뛴 사람"
+        string details "훈련 내용 (500*5km, 인터벌 ...)"
+        int durationSec
+        int paceSecPerKm
     }
     INBODY_MEASUREMENT {
-        string id PK
-        date measured_on
+        date measured_on PK
         float weight_kg
         float skeletal_muscle_kg
         float body_fat_kg
         float body_fat_pct
-        float bmi
-        int bmr_kcal
-        int inbody_score
-        string photo_id FK "원본 사진(선택)"
-        string source "manual / ocr / ocr_ai"
-    }
-    GOAL {
-        string id PK
-        string metric "body_fat_pct 등"
-        float target_value
-        date target_date
+        string source "ocr / manual"
     }
 ```
 
-- ID는 UUID를 사용해, 나중에 여러 기기 동기화를 붙이더라도 충돌이 없도록 합니다.
-- 모든 레코드에 `updated_at`을 두어 백업 복원 시 최신 값 기준으로 병합합니다.
+**기록 표기 규칙** (텍스트 파서 기준)
 
----
+| 표기 | 의미 |
+|---|---|
+| `500`, `436`, `417` | 1km당 페이스 5'00", 4'36", 4'17" |
+| `10k/h`, `(워,11,12,13,쿨)` | 트레드밀 시속 (km/h) |
+| `혈압 106` | 수축기 혈압 |
+| `가우스 달벙` / `급벙` / `LSD` | 크루 정기 모임 / 번개 / 장거리 훈련 |
+| `23키로(서울레이스, 1시간31분51초)` | 워밍업 포함 거리 — 페이스는 하프(21.0975km) 기준 |
+| `레벨` = `레벨5` | 신발 별칭 (`src/import/dictionary.ts`) |
 
 ## 6. 주요 흐름
 
@@ -327,17 +327,15 @@ sequenceDiagram
 | 단계 | 내용 | 결과물 |
 |---|---|---|
 | 1 | 프로젝트 셋업, PWA 설치·오프라인 확인, 자동 배포 | 휴대폰에 설치되는 빈 앱 |
-| 2 | DB 스키마 + 인바디 직접 입력/이력 | 주간 인바디 기록 시작 가능 |
-| 3 | 운동 기록 (세션·세트 빠른 입력) | 헬스장에서 기록 시작 가능 |
-| 4 | 운동 텍스트 파서 (2024.10~ 이관) | 과거 운동 데이터 이관 완료 |
-| 5 | 인바디 사진 OCR + 확인 화면 (일괄 처리) | 과거 인바디 데이터 이관 완료 |
-| 6 | 홈 요약 + 통계 차트 | 현황 대시보드 |
+| 2 | 운동 텍스트 파서 + 확인·수정 화면 ✅ | 2024.10~ 기록 703일 이관 |
+| 3 | 기기 저장(IndexedDB) + 통계 화면 ✅ | 월별 거리, 체지방률·혈압 추세, 신발, 대회, 크루 |
+| 4 | 하루 기록 빠른 입력 (러닝·웨이트·체지방률) | 앱에서 바로 기록 |
+| 5 | 인바디 결과지 사진 OCR + 확인 화면 | 체중·골격근량·체지방량 이관 |
+| 6 | 홈 요약 | 현황 한눈에 |
 | 7 | 목표 추적, 백업·복원, 상관 분석 | 상시 운영 완성 |
 
 ---
 
 ## 11. 확인이 필요한 사항
 
-1. 운동 기록 텍스트 샘플 몇 줄 (날짜·종목·중량·횟수를 어떻게 적었는지) — 파서 규칙의 기준
-2. 인바디 사진 종류: 인쇄된 **결과지 사진**인가요, **InBody 앱 화면 캡처**인가요? (인식 영역이 다름)
-3. 과거 인바디 사진 일괄 처리에 Claude API(고정밀, 소액 비용) 사용 여부
+1. 과거 인바디 결과지 사진 일괄 처리에 Claude API(고정밀, 소액 비용) 사용 여부

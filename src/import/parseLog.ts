@@ -4,7 +4,7 @@
 // Log conventions: "500", "436" are paces per km (5'00", 4'36"); "10k/h", "(워,11,12,13,쿨)" are
 // treadmill speeds in km/h; "혈압" is the systolic value.
 
-import { CREWS, HALF_MARATHON_KM, SHOES } from './dictionary'
+import { CREWS, HALF_MARATHON_KM, SHOE_ALIASES, SHOES } from './dictionary'
 
 export type ActivityKind = 'run' | 'walk'
 
@@ -344,6 +344,7 @@ function pickShoe(a: Activity) {
     a.shoe = a.place
     a.place = undefined
   }
+  if (a.shoe) a.shoe = SHOE_ALIASES[a.shoe] ?? a.shoe
 }
 
 function pickCrew(a: Activity) {
