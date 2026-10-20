@@ -129,56 +129,6 @@ export function mergeGarmin(
   return { days: out, stats }
 }
 
-export interface DuplicateReport {
-  /** a watch-only run that is probably the same as a logged run of that day */
-  pairs: { date: string; loggedIndex: number; garminIndex: number; loggedKm: number; garminKm: number }[]
-  /** watch-only runs on days that also have logged runs, with no logged run left to pair */
-  extras: { date: string; index: number; km: number }[]
-}
-
-/** Finds watch-only runs that duplicate logged runs (from imports made before pairing existed). */
-export function findDuplicates(days: DayEntry[]): DuplicateReport {
-  const report: DuplicateReport = { pairs: [], extras: [] }
-  for (const day of days) {
-    const indexed = day.activities.map((a, i) => ({ a, i })).filter(({ a }) => isMove(a) && !a.deleted)
-    const watch = indexed.filter(({ a }) => a.source === 'garmin')
-    const logged = indexed.filter(({ a }) => a.source !== 'garmin')
-    if (!watch.length || !logged.length) continue
-    const used = new Set<number>()
-    for (const kind of ['run', 'walk'] as const) {
-      const ws = watch.filter(({ a }) => a.kind === kind)
-      const ls = logged.filter(({ a }) => a.kind === kind && !a.garmin)
-      for (const [wi, li] of pairByDistance(
-        ws.map(({ a }) => a.distanceKm),
-        ls.map(({ a }) => a.distanceKm),
-      )) {
-        used.add(ws[wi].i)
-        report.pairs.push({ date: day.date, loggedIndex: ls[li].i, garminIndex: ws[wi].i, loggedKm: ls[li].a.distanceKm, garminKm: ws[wi].a.distanceKm })
-      }
-    }
-    for (const { a, i } of watch) if (!used.has(i)) report.extras.push({ date: day.date, index: i, km: a.distanceKm })
-  }
-  return report
-}
-
-/**
- * Fixes a day: paired watch runs give their data to the logged run, then are marked deleted
- * (kept so a later import of the same file recognizes them); chosen extras are marked deleted.
- */
-export function repairDay(day: DayEntry, pairs: { loggedIndex: number; garminIndex: number }[], extraIndexes: number[]): DayEntry {
-  const activities = day.activities.map((a) => ({ ...a }))
-  for (const { loggedIndex, garminIndex } of pairs) {
-    const logged = activities[loggedIndex]
-    const watch = activities[garminIndex]
-    logged.garmin = watch.garmin
-    logged.shoe ??= watch.shoe
-    fillFromGarmin(logged)
-    watch.deleted = true
-  }
-  for (const i of extraIndexes) activities[i].deleted = true
-  return { ...day, activities }
-}
-
 function toData(g: GarminActivity): GarminData {
   const { startTime, title, distanceKm, durationSec, avgHr, maxHr, cadence, ascentM, calories } = g
   return { startTime, title, distanceKm, durationSec, avgHr, maxHr, cadence, ascentM, calories }

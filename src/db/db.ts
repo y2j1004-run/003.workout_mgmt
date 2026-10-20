@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { GarminActivity } from '../import/garminCsv'
-import { mergeGarmin, pairByDistance, repairDay, sameRun, type DuplicateReport, type GarminMergeStats } from '../import/mergeGarmin'
+import { mergeGarmin, pairByDistance, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
 import type { Activity, DayEntry, RaceEdits } from '../import/parseLog'
 import { mergeRecord, type InBodyRecord } from '../inbody/inbody'
 
@@ -184,19 +184,6 @@ export async function saveGarmin(activities: GarminActivity[], addAnyway?: Set<s
     const savedAt = Date.now()
     await db.days.bulkPut(days.map((d) => ({ ...d, savedAt })))
     return stats
-  })
-}
-
-/** Applies a duplicate cleanup chosen by the user (see findDuplicates). */
-export async function repairDuplicates(report: DuplicateReport, extrasToDelete: { date: string; index: number }[]) {
-  await db.transaction('rw', db.days, async () => {
-    const dates = [...new Set([...report.pairs.map((p) => p.date), ...extrasToDelete.map((e) => e.date)])]
-    const savedAt = Date.now()
-    for (const day of (await db.days.bulkGet(dates)).filter((d) => !!d)) {
-      const pairs = report.pairs.filter((p) => p.date === day.date)
-      const extras = extrasToDelete.filter((e) => e.date === day.date).map((e) => e.index)
-      await db.days.put({ ...repairDay(day, pairs, extras), savedAt })
-    }
   })
 }
 

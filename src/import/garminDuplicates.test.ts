@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseGarminCsv } from './garminCsv'
-import { findDuplicates, mergeGarmin, pairByDistance, repairDay } from './mergeGarmin'
+import { mergeGarmin, pairByDistance } from './mergeGarmin'
 import { parseLog, type DayEntry } from './parseLog'
 
 const empty = (date: string): DayEntry => ({ date, activities: [], metrics: {}, stretching: false, rest: false, notes: [], issues: [], raw: [] })
@@ -48,40 +48,5 @@ describe('mergeGarmin on logged days', () => {
   it('still adds watch runs on days with nothing logged', () => {
     const { stats } = mergeGarmin(logged, csv('Running,2026-10-16 06:00:00,6.50,00:35:00\n'), empty)
     expect(stats).toMatchObject({ added: 1, extras: [] })
-  })
-})
-
-describe('cleaning up duplicates from earlier imports', () => {
-  // what the old rule produced: the treadmill reading was added as a second run
-  const broken: DayEntry = {
-    ...logged[0],
-    activities: [
-      ...logged[0].activities.map((a, i) => (i === 1 ? { ...a, garmin: { startTime: 'b', distanceKm: 10.31, durationSec: 3000 } } : a)),
-      { kind: 'run', distanceKm: 5.1, source: 'garmin', garmin: { startTime: 'a', distanceKm: 5.1, durationSec: 2100 }, companions: [], details: [], tags: [] },
-      { kind: 'run', distanceKm: 1.5, source: 'garmin', garmin: { startTime: 'c', distanceKm: 1.5 }, companions: [], details: [], tags: [] },
-    ],
-  }
-
-  it('finds the watch copy of a logged run and leftovers', () => {
-    const report = findDuplicates([broken])
-    expect(report.pairs).toEqual([{ date: '2026-10-13', loggedIndex: 0, garminIndex: 2, loggedKm: 6.4, garminKm: 5.1 }])
-    expect(report.extras).toEqual([{ date: '2026-10-13', index: 3, km: 1.5 }])
-  })
-
-  it('moves the watch data onto the logged run and hides the copies', () => {
-    const report = findDuplicates([broken])
-    const fixed = repairDay(broken, report.pairs, [3])
-    const live = fixed.activities.filter((a) => !a.deleted)
-    expect(live.map((a) => [a.distanceKm, a.garmin?.startTime, a.durationSec])).toEqual([
-      [6.4, 'a', 2100],
-      [10.2, 'b', undefined],
-    ])
-    expect(findDuplicates([fixed])).toEqual({ pairs: [], extras: [] })
-  })
-
-  it('a later import of the same file does not bring the copies back', () => {
-    const fixed = repairDay(broken, findDuplicates([broken]).pairs, [3])
-    const again = mergeGarmin([fixed], csv('Treadmill Running,2026-10-13 06:00:00,5.10,00:35:00\n').map((g) => ({ ...g, startTime: 'a' })), empty)
-    expect(again.stats).toMatchObject({ updated: 1, added: 0, extras: [] })
   })
 })
