@@ -28,27 +28,36 @@ export default function Workout() {
   return (
     <section className="space-y-4">
       <h1 className="text-2xl font-bold">운동</h1>
-      <RunForm shoes={active} />
+      <RunForm shoes={active} places={recentPlaces(days)} />
       <RecentRuns days={days} shoes={active} />
       <MyShoes totals={totals} />
     </section>
   )
 }
 
-function RunForm({ shoes }: { shoes: string[] }) {
+/** Places of recent runs, most recent first. */
+function recentPlaces(days: StoredDay[]): string[] {
+  const seen = new Set<string>()
+  for (const r of runsOf(days).reverse()) if (r.place) seen.add(r.place)
+  return [...seen]
+}
+
+function RunForm({ shoes, places }: { shoes: string[]; places: string[] }) {
   const [date, setDate] = useState(today)
   const [distance, setDistance] = useState('')
   const [shoe, setShoe] = useState<string | undefined>(shoes[0])
   const [theme, setTheme] = useState<string>()
+  const [place, setPlace] = useState('')
   const [msg, setMsg] = useState('')
   const valid = Number(distance) > 0
 
   const save = async () => {
     if (!valid) return
-    await addRun(date, Number(distance), shoe, theme)
-    setMsg(`${date.slice(5).replace('-', '.')} 러닝 ${km(Number(distance))}${theme ? ` · ${theme}` : ''}${shoe ? ` · ${shoe}` : ''} 저장했습니다.`)
+    await addRun(date, Number(distance), shoe, theme, place)
+    setMsg(`${date.slice(5).replace('-', '.')} 러닝 ${km(Number(distance))}${place.trim() ? ` · ${place.trim()}` : ''}${theme ? ` · ${theme}` : ''}${shoe ? ` · ${shoe}` : ''} 저장했습니다.`)
     setDistance('')
     setTheme(undefined)
+    setPlace('')
   }
 
   return (
@@ -73,6 +82,35 @@ function RunForm({ shoes }: { shoes: string[] }) {
           />
         </label>
       </div>
+      <label className="mt-3 block text-xs text-slate-500">
+        장소
+        <input
+          id="run-place"
+          list="run-place-list"
+          value={place}
+          onChange={(e) => setPlace(e.target.value)}
+          placeholder="예: 광교호수공원"
+          className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-base text-slate-900"
+        />
+      </label>
+      <datalist id="run-place-list">
+        {places.map((p) => (
+          <option key={p} value={p} />
+        ))}
+      </datalist>
+      {places.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {places.slice(0, 6).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPlace(place === p ? '' : p)}
+              className={`rounded-full px-2.5 py-1 text-xs ${place === p ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-700'}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
       <p className="mt-3 mb-1 text-xs text-slate-500">러닝 주제</p>
       <ThemePicker key={msg} id="run-theme" value={theme} onPick={setTheme} />
       <p className="mt-3 mb-1 text-xs text-slate-500">신발</p>
