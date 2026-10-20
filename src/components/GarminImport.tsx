@@ -10,10 +10,12 @@ export default function GarminImport() {
   const [preview, setPreview] = useState<GarminMergeStats>()
   const [msg, setMsg] = useState('')
   const [saving, setSaving] = useState(false)
+  const [addAnyway, setAddAnyway] = useState<Set<string>>(new Set())
 
   const load = async (file?: File) => {
     if (!file) return
     setMsg('')
+    setAddAnyway(new Set())
     const r = parseGarminCsv(await file.text())
     setResult(r)
     // dry run against what is stored, so the numbers below match what saving will do
@@ -26,8 +28,10 @@ export default function GarminImport() {
     if (!result) return
     setSaving(true)
     try {
-      const s = await saveGarmin(result.activities)
-      setMsg(`저장했습니다. 기존 러닝에 합침 ${s.matched}개, 새 러닝 ${s.added}개, 다시 읽어 갱신 ${s.updated}개.`)
+      const s = await saveGarmin(result.activities, addAnyway)
+      setMsg(
+        `저장했습니다. 기존 러닝에 합침 ${s.matched}개, 새 러닝 ${s.added}개, 다시 읽어 갱신 ${s.updated}개${s.extras.length ? `, 중복으로 보고 건너뜀 ${s.extras.length}개` : ''}.`,
+      )
       setResult(undefined)
       setPreview(undefined)
     } catch (e) {
@@ -66,8 +70,35 @@ export default function GarminImport() {
               </p>
               {preview && (
                 <p className="tabular-nums text-slate-600">
-                  저장하면: 기존 러닝에 합침 {preview.matched} · 새 러닝 {preview.added} · 이미 가져온 활동 갱신 {preview.updated} · 웨이트 표시 {preview.strengthDays}일 · 건너뜀 {preview.ignored}
+                  저장하면: 기존 러닝에 합침 {preview.matched} · 새 러닝 {preview.added + addAnyway.size} · 이미 가져온 활동 갱신 {preview.updated} · 웨이트 표시{' '}
+                  {preview.strengthDays}일 · 건너뜀 {preview.ignored}
                 </p>
+              )}
+              {preview && preview.extras.length > 0 && (
+                <div className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+                  <p className="mb-1">
+                    아래 {preview.extras.length}개는 그날 기록된 러닝과 짝이 맞지 않아 <b>중복일 수 있어서 넣지 않습니다</b>. 실제로 따로 달린 거면 체크하세요.
+                  </p>
+                  <ul className="space-y-0.5">
+                    {preview.extras.map((g) => (
+                      <li key={g.startTime}>
+                        <label className="flex items-center gap-2 tabular-nums">
+                          <input
+                            type="checkbox"
+                            checked={addAnyway.has(g.startTime)}
+                            onChange={(e) => {
+                              const next = new Set(addAnyway)
+                              if (e.target.checked) next.add(g.startTime)
+                              else next.delete(g.startTime)
+                              setAddAnyway(next)
+                            }}
+                          />
+                          {g.startTime} · {g.type} {g.distanceKm}km
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </>
           )}

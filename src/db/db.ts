@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { GarminActivity } from '../import/garminCsv'
-import { mergeGarmin, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
+import { mergeGarmin, pairByDistance, repairDay, sameRun, type DuplicateReport, type GarminMergeStats } from '../import/mergeGarmin'
 import type { Activity, DayEntry, RaceEdits } from '../import/parseLog'
 import { mergeRecord, type InBodyRecord } from '../inbody/inbody'
 
@@ -75,12 +75,20 @@ function mergeAppEdits(next: DayEntry, prev?: DayEntry): DayEntry {
     const carried = { ...a, shoe: a.shoe ?? before.shoe, garmin: before.garmin, durationSec: a.durationSec ?? before.durationSec, paceSecPerKm: a.paceSecPerKm ?? before.paceSecPerKm }
     return before.appEdits ? applyRaceEdits(carried, before.appEdits) : carried
   })
-  for (const extra of prev.activities.filter((p) => p.source)) {
-    // a watch run that now also appears in the log joins that run instead of being counted twice
-    const twin = extra.source === 'garmin' && !extra.deleted && activities.find((a) => !a.garmin && !a.source && !a.deleted && sameRun(a.distanceKm, extra.distanceKm))
-    if (twin) Object.assign(twin, { garmin: extra.garmin, shoe: twin.shoe ?? extra.shoe, durationSec: twin.durationSec ?? extra.durationSec, paceSecPerKm: twin.paceSecPerKm ?? extra.paceSecPerKm })
-    else activities.push(extra)
+  // a watch run that now also appears in the log joins that run instead of being counted twice
+  const extras = prev.activities.filter((p) => p.source)
+  const watch = extras.filter((e) => e.source === 'garmin' && !e.deleted)
+  const open = activities.filter((a) => !a.garmin && !a.source && !a.deleted)
+  const joined = new Set<Activity>()
+  for (const [wi, oi] of pairByDistance(
+    watch.map((w) => w.distanceKm),
+    open.map((a) => a.distanceKm),
+  )) {
+    const w = watch[wi]
+    Object.assign(open[oi], { garmin: w.garmin, shoe: open[oi].shoe ?? w.shoe, durationSec: open[oi].durationSec ?? w.durationSec, paceSecPerKm: open[oi].paceSecPerKm ?? w.paceSecPerKm })
+    joined.add(w)
   }
+  activities.push(...extras.filter((e) => !joined.has(e)))
   return { ...next, activities }
 }
 
@@ -168,14 +176,27 @@ export async function addRace(date: string, event: string, distanceKm: number, d
 }
 
 /** Merges a Garmin Connect export into the stored days. */
-export async function saveGarmin(activities: GarminActivity[]): Promise<GarminMergeStats> {
+export async function saveGarmin(activities: GarminActivity[], addAnyway?: Set<string>): Promise<GarminMergeStats> {
   return db.transaction('rw', db.days, async () => {
     const dates = [...new Set(activities.map((a) => a.date))]
     const existing = (await db.days.bulkGet(dates)).filter((d) => !!d)
-    const { days, stats } = mergeGarmin(existing, activities, emptyDay)
+    const { days, stats } = mergeGarmin(existing, activities, emptyDay, addAnyway)
     const savedAt = Date.now()
     await db.days.bulkPut(days.map((d) => ({ ...d, savedAt })))
     return stats
+  })
+}
+
+/** Applies a duplicate cleanup chosen by the user (see findDuplicates). */
+export async function repairDuplicates(report: DuplicateReport, extrasToDelete: { date: string; index: number }[]) {
+  await db.transaction('rw', db.days, async () => {
+    const dates = [...new Set([...report.pairs.map((p) => p.date), ...extrasToDelete.map((e) => e.date)])]
+    const savedAt = Date.now()
+    for (const day of (await db.days.bulkGet(dates)).filter((d) => !!d)) {
+      const pairs = report.pairs.filter((p) => p.date === day.date)
+      const extras = extrasToDelete.filter((e) => e.date === day.date).map((e) => e.index)
+      await db.days.put({ ...repairDay(day, pairs, extras), savedAt })
+    }
   })
 }
 

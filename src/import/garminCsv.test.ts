@@ -61,7 +61,7 @@ describe('mergeGarmin', () => {
     // race with warm-up keeps its own pace basis
     expect(run('2026-10-17')).toMatchObject({ raceDistanceKm: 21.0975, garmin: { durationSec: 6000 } })
     expect(run('2026-10-17').durationSec).toBeUndefined()
-    expect(stats).toEqual({ matched: 3, added: 0, updated: 0, strengthDays: 0, ignored: 1 })
+    expect(stats).toEqual({ matched: 3, added: 0, updated: 0, strengthDays: 0, ignored: 1, extras: [] })
   })
 
   it('adds unmatched watch runs and recognizes a re-imported file', () => {
