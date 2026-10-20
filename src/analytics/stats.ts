@@ -35,12 +35,35 @@ export function metricSeries(days: DayEntry[], key: 'bodyFatPct' | 'systolicBp' 
     .sort((a, b) => a.date.localeCompare(b.date))
 }
 
-export function shoeTotals(days: DayEntry[]): { shoe: string; km: number; runs: number; lastUsed: string }[] {
+export interface ShoeTotal {
+  shoe: string
+  /** distance before logging started + logged runs */
+  km: number
+  loggedKm: number
+  runs: number
+  lastUsed?: string
+  retired: boolean
+}
+
+export function shoeTotals(days: DayEntry[], shoes: { name: string; initialKm: number; retired: boolean }[] = []): ShoeTotal[] {
   const map = new Map<string, DatedActivity[]>()
   for (const r of runsOf(days)) if (r.shoe) map.set(r.shoe, [...(map.get(r.shoe) ?? []), r])
-  return [...map]
-    .map(([shoe, rs]) => ({ shoe, km: sumKm(rs), runs: rs.length, lastUsed: rs.map((r) => r.date).sort().at(-1)! }))
-    .sort((a, b) => b.km - a.km)
+  const names = new Set([...shoes.map((s) => s.name), ...map.keys()])
+  return [...names]
+    .map((shoe) => {
+      const rs = map.get(shoe) ?? []
+      const info = shoes.find((s) => s.name === shoe)
+      const loggedKm = sumKm(rs)
+      return {
+        shoe,
+        km: round1(loggedKm + (info?.initialKm ?? 0)),
+        loggedKm,
+        runs: rs.length,
+        lastUsed: rs.map((r) => r.date).sort().at(-1),
+        retired: info?.retired ?? false,
+      }
+    })
+    .sort((a, b) => Number(a.retired) - Number(b.retired) || b.km - a.km)
 }
 
 const RACE_RE = /마라톤|레이스|대회|서킷런/

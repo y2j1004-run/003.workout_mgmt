@@ -10,7 +10,8 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000
 
 export default function Stats() {
   const days = useLiveQuery(() => db.days.orderBy('date').toArray())
-  if (!days) return null
+  const shoeList = useLiveQuery(() => db.shoes.toArray())
+  if (!days || !shoeList) return null
   if (!days.length) {
     return (
       <section>
@@ -27,7 +28,7 @@ export default function Stats() {
   const months = monthlyKm(days).slice(-24)
   const bodyFat = metricSeries(days, 'bodyFatPct')
   const bp = metricSeries(days, 'systolicBp')
-  const shoes = shoeTotals(days)
+  const shoes = shoeTotals(days, shoeList).filter((sh) => sh.km > 0)
   const raceList = races(days)
   const crews = crewCounts(days)
   const bfChange = s.lastBodyFat && s.firstBodyFat ? s.lastBodyFat.value - s.firstBodyFat.value : undefined
@@ -73,9 +74,12 @@ export default function Stats() {
             {shoes.map((sh) => (
               <li key={sh.shoe}>
                 <div className="flex justify-between text-sm">
-                  <span className="font-semibold">{sh.shoe}</span>
+                  <span className={`font-semibold ${sh.retired ? 'text-slate-400' : ''}`}>
+                    {sh.shoe}
+                    {sh.retired && <span className="ml-1 text-xs font-normal">(은퇴)</span>}
+                  </span>
                   <span className="tabular-nums">
-                    {km(sh.km)} <span className="text-xs text-slate-500">· {sh.runs}회 · 최근 {sh.lastUsed.slice(5).replace('-', '.')}</span>
+                    {km(sh.km)} <span className="text-xs text-slate-500">· {sh.runs}회{sh.lastUsed ? ` · 최근 ${sh.lastUsed.slice(5).replace('-', '.')}` : ''}</span>
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 rounded-full bg-slate-100">

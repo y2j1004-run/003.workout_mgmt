@@ -22,7 +22,7 @@ describe('stats', () => {
   })
 
   it('merges shoe aliases', () => {
-    expect(shoeTotals(days)).toEqual([{ shoe: '레벨5', km: 22, runs: 2, lastUsed: '2026-03-01' }])
+    expect(shoeTotals(days)).toEqual([{ shoe: '레벨5', km: 22, loggedKm: 22, runs: 2, lastUsed: '2026-03-01', retired: false }])
   })
 
   it('lists races but not warm-ups or crew runs', () => {
@@ -38,5 +38,20 @@ describe('stats', () => {
     const s = summary(days, '2026-03-28')
     expect(s).toMatchObject({ totalKm: 63, yearKm: 63, weeklyAvgKm4w: 11.3, runDays: 5 })
     expect(s.lastBodyFat?.value).toBe(14)
+  })
+})
+
+describe('shoeTotals with shoe list', () => {
+  it('adds distance from before tracking and lists unused and retired shoes last', () => {
+    const shoes = [
+      { name: '레벨5', initialKm: 100, retired: false },
+      { name: '새신발', initialKm: 0, retired: false },
+      { name: '옛신발', initialKm: 800, retired: true },
+    ]
+    expect(shoeTotals(days, shoes).map((s) => [s.shoe, s.km, s.runs, s.retired])).toEqual([
+      ['레벨5', 122, 2, false],
+      ['새신발', 0, 0, false],
+      ['옛신발', 800, 0, true],
+    ])
   })
 })

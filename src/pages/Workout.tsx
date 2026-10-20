@@ -1,5 +1,209 @@
-import Placeholder from '../components/Placeholder'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useState, type ReactNode } from 'react'
+import { shoeTotals } from '../analytics/stats'
+import ShoePicker from '../components/ShoePicker'
+import { addRun, db, setRunShoe, updateShoe, type StoredDay } from '../db/db'
+
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
 
 export default function Workout() {
-  return <Placeholder title="운동" items={['오늘 운동 시작', '세트 빠른 입력 (이전 기록 자동 채움)', '운동 캘린더 / 지난 기록']} />
+  const days = useLiveQuery(() => db.days.orderBy('date').toArray())
+  const shoes = useLiveQuery(() => db.shoes.toArray())
+  if (!days || !shoes) return null
+
+  const totals = shoeTotals(days, shoes)
+  // shoes in rotation, most recently used first
+  const active = totals
+    .filter((t) => !t.retired)
+    .sort((a, b) => (b.lastUsed ?? '').localeCompare(a.lastUsed ?? ''))
+    .map((t) => t.shoe)
+
+  return (
+    <section className="space-y-4">
+      <h1 className="text-2xl font-bold">운동</h1>
+      <RunForm shoes={active} />
+      <RecentRuns days={days} shoes={active} />
+      <MyShoes totals={totals} />
+    </section>
+  )
+}
+
+function RunForm({ shoes }: { shoes: string[] }) {
+  const [date, setDate] = useState(today)
+  const [distance, setDistance] = useState('')
+  const [shoe, setShoe] = useState<string | undefined>(shoes[0])
+  const [msg, setMsg] = useState('')
+  const valid = Number(distance) > 0
+
+  const save = async () => {
+    if (!valid) return
+    await addRun(date, Number(distance), shoe)
+    setMsg(`${date.slice(5).replace('-', '.')} 러닝 ${km(Number(distance))}${shoe ? ` · ${shoe}` : ''} 저장했습니다.`)
+    setDistance('')
+  }
+
+  return (
+    <Card title="러닝 기록하기">
+      <div className="flex gap-2">
+        <label className="flex-1 text-xs text-slate-500">
+          날짜
+          <input id="run-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-base text-slate-900" />
+        </label>
+        <label className="w-28 text-xs text-slate-500">
+          거리(km)
+          <input
+            id="run-km"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            min="0"
+            value={distance}
+            onChange={(e) => setDistance(e.target.value)}
+            placeholder="10.2"
+            className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-base text-slate-900"
+          />
+        </label>
+      </div>
+      <p className="mt-3 mb-1 text-xs text-slate-500">신발</p>
+      <ShoePicker id="run-shoe" options={shoes} value={shoe} onPick={setShoe} allowNone />
+      <button onClick={save} disabled={!valid} className="mt-4 w-full rounded-lg bg-teal-700 py-2.5 font-semibold text-white disabled:opacity-40">
+        저장
+      </button>
+      {msg && <p className="mt-2 text-sm text-teal-700">{msg}</p>}
+    </Card>
+  )
+}
+
+function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
+  const [onlyMissing, setOnlyMissing] = useState(false)
+  const [editing, setEditing] = useState<string>()
+  const [limit, setLimit] = useState(15)
+  const runs = days
+    .flatMap((d) => d.activities.map((a, i) => ({ ...a, date: d.date, index: i })))
+    .filter((a) => a.kind === 'run' && (!onlyMissing || !a.shoe))
+    .reverse()
+
+  if (!days.length) {
+    return (
+      <Card title="최근 러닝">
+        <p className="text-sm text-slate-500">위에서 러닝을 저장하거나 ⚙️ 설정에서 기록을 가져오면 여기에 나옵니다.</p>
+      </Card>
+    )
+  }
+
+  return (
+    <Card title="최근 러닝">
+      <label className="mb-2 flex items-center gap-2 text-sm">
+        <input id="only-missing-shoe" type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} />
+        신발을 안 고른 러닝만
+      </label>
+      <ul className="divide-y divide-slate-100">
+        {runs.slice(0, limit).map((r) => {
+          const key = `${r.date}#${r.index}`
+          return (
+            <li key={key} className="py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 text-sm">
+                  <span className="font-semibold tabular-nums">{r.date.slice(2).replaceAll('-', '.')}</span>
+                  <span className="ml-2 tabular-nums">{km(r.distanceKm)}</span>
+                  {(r.event || r.place) && <span className="ml-1 truncate text-xs text-slate-500">· {r.event ?? r.place}</span>}
+                </div>
+                <button
+                  onClick={() => setEditing(editing === key ? undefined : key)}
+                  className={`shrink-0 rounded-full px-3 py-1 text-xs ${r.shoe ? 'bg-slate-100 text-slate-700' : 'border border-amber-400 text-amber-700'}`}
+                >
+                  {r.shoe ? `👟 ${r.shoe}` : '신발 선택'}
+                </button>
+              </div>
+              {editing === key && (
+                <div className="mt-2">
+                  <ShoePicker
+                    id={`shoe-${key}`}
+                    options={shoes}
+                    value={r.shoe}
+                    allowNone
+                    onPick={async (s) => {
+                      await setRunShoe(r.date, r.index, s)
+                      setEditing(undefined)
+                    }}
+                  />
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {runs.length > limit && (
+        <button onClick={() => setLimit(limit + 30)} className="mt-2 w-full rounded-lg bg-slate-100 py-2 text-sm">
+          더 보기 ({runs.length - limit}개 남음)
+        </button>
+      )}
+    </Card>
+  )
+}
+
+function MyShoes({ totals }: { totals: ReturnType<typeof shoeTotals> }) {
+  const [editing, setEditing] = useState<string>()
+  const [initial, setInitial] = useState('')
+  if (!totals.length) return null
+
+  return (
+    <Card title="내 신발">
+      <p className="mb-2 text-xs text-slate-500">기록하기 전에 이미 달린 거리가 있으면 "이전 거리"에 넣어 주세요. 누적 거리에 더해집니다.</p>
+      <ul className="divide-y divide-slate-100">
+        {totals.map((t) => (
+          <li key={t.shoe} className="py-2">
+            <button
+              onClick={() => {
+                setEditing(editing === t.shoe ? undefined : t.shoe)
+                setInitial(String(t.km - t.loggedKm || ''))
+              }}
+              className="flex w-full items-baseline justify-between text-left text-sm"
+            >
+              <span className={`font-semibold ${t.retired ? 'text-slate-400' : ''}`}>
+                {t.shoe}
+                {t.retired && <span className="ml-1 text-xs font-normal">(은퇴)</span>}
+              </span>
+              <span className="tabular-nums">
+                {km(t.km)} <span className="text-xs text-slate-500">· {t.runs}회</span>
+              </span>
+            </button>
+            {editing === t.shoe && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                <label className="flex items-center gap-1 text-xs text-slate-500">
+                  이전 거리
+                  <input
+                    id={`initial-${t.shoe}`}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={initial}
+                    onChange={(e) => setInitial(e.target.value)}
+                    className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-900"
+                  />
+                  km
+                </label>
+                <button onClick={() => updateShoe(t.shoe, { initialKm: Number(initial) || 0 }).then(() => setEditing(undefined))} className="rounded-lg bg-teal-700 px-3 py-1 text-white">
+                  저장
+                </button>
+                <button onClick={() => updateShoe(t.shoe, { retired: !t.retired }).then(() => setEditing(undefined))} className="rounded-lg bg-slate-200 px-3 py-1">
+                  {t.retired ? '다시 신기' : '은퇴시키기'}
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )
+}
+
+function Card({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm">
+      <h2 className="mb-3 font-semibold">{title}</h2>
+      {children}
+    </div>
+  )
 }

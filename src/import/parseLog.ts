@@ -19,6 +19,8 @@ export interface Activity {
   /** official distance when the logged distance includes warm-up (e.g. half marathon in a 23km day) */
   raceDistanceKm?: number
   shoe?: string
+  /** 'app' when entered in the app rather than read from the text log */
+  source?: 'app'
   companions: string[]
   /** training content such as "인터벌", "500*5km, 436*5km" */
   details: string[]
