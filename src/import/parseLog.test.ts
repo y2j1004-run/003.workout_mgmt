@@ -38,7 +38,11 @@ const sample = `* 목표 메모
   * 408로 5분 버티고 쉼
                 6.6키로(업힐 훈련, 언덕)
 08 04 : 12.3키로, 빌드업 러닝
+06.28 : 39키로(남산, w/크루X, 디나엘4)
+09.15 : 11.1키로(510*8키로, 100질주*4회) ※ 338
 09.20 : 32키로(테스트백제마라톤, 평페 434)
+10.11 : 23키로(테스트레이스, 1시간31분51초)
+10.17 : 23키로(2k 워밍업, 하프 / 테스트마라톤)
 10.01 : 10.01키로 * 지속주(420*8km)
 `
 
@@ -101,9 +105,9 @@ describe('parseLog', () => {
   })
 
   it('reads weight and vo2max from free text', () => {
-    expect(day('2025-10-25')).toMatchObject({ rest: true, metrics: { weightKg: 65, bodyFatPct: 14.8, bloodPressure: 125 } })
+    expect(day('2025-10-25')).toMatchObject({ rest: true, metrics: { weightKg: 65, bodyFatPct: 14.8, systolicBp: 125 } })
     expect(day('2026-01-17').metrics.vo2max).toBe(56)
-    expect(day('2026-04-30').metrics).toEqual({ bodyFatPct: 13.5, bloodPressure: 105, weightKg: 62.7 })
+    expect(day('2026-04-30').metrics).toEqual({ bodyFatPct: 13.5, systolicBp: 105, weightKg: 62.7 })
   })
 
   it('records skipped strength sessions as not done', () => {
@@ -134,6 +138,22 @@ describe('parseLog', () => {
   it('keeps text after the distance as training detail', () => {
     expect(day('2026-08-04').activities[0].details).toEqual(['빌드업 러닝'])
     expect(day('2026-10-01').activities[0].details).toEqual(['지속주(420*8km)'])
+  })
+})
+
+describe('dictionary-based fields', () => {
+  it('moves shoes and crews out of tags and companions', () => {
+    const run = day('2026-06-28').activities[0]
+    expect(run).toMatchObject({ shoe: '디나엘4', companions: ['크루X'], tags: [] })
+  })
+
+  it('drops bare-number notes', () => {
+    expect(day('2026-09-15').notes).toEqual([])
+  })
+
+  it('uses the half-marathon distance for race pace when warm-up is included', () => {
+    expect(day('2026-10-11').activities[0]).toMatchObject({ raceDistanceKm: 21.0975, paceSecPerKm: 261 })
+    expect(day('2026-10-17').activities[0].raceDistanceKm).toBe(21.0975)
   })
 })
 

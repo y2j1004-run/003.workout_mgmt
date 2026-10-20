@@ -88,7 +88,7 @@ function Summary({ days }: { days: DayEntry[] }) {
     ['걷기', `${acts.length - runs.length}회 · ${km(acts.filter((a) => a.kind === 'walk')).toFixed(1)}km`],
     ['웨이트', `${days.filter((d) => d.strength?.done).length}일`],
     ['체지방률 측정', `${days.filter((d) => d.metrics.bodyFatPct).length}회`],
-    ['혈압 기록', `${days.filter((d) => d.metrics.bloodPressure).length}회`],
+    ['혈압 기록', `${days.filter((d) => d.metrics.systolicBp).length}회`],
     ['공복 기록', `${days.filter((d) => d.fastingHours).length}일`],
   ]
   return (
@@ -110,7 +110,7 @@ function DayCard({ day }: { day: DayEntry }) {
     day.strength && (day.strength.done ? `웨이트${day.strength.parts.length ? ` (${day.strength.parts.join(', ')})` : ''}` : '웨이트 못함'),
     day.fastingHours && `공복 ${day.fastingHours}시간`,
     m.bodyFatPct && `체지방률 ${m.bodyFatPct}%`,
-    m.bloodPressure && `혈압 ${m.bloodPressure}`,
+    m.systolicBp && `혈압(수축기) ${m.systolicBp}`,
     m.weightKg && `체중 ${m.weightKg}kg`,
     m.vo2max && `VO2max ${m.vo2max}`,
     m.heartRate && `심박수 ${m.heartRate}`,
@@ -132,9 +132,12 @@ function DayCard({ day }: { day: DayEntry }) {
           </span>
           {a.durationSec ? <span className="tabular-nums"> · {fmtTime(a.durationSec)}</span> : null}
           {a.paceSecPerKm ? <span className="tabular-nums"> · {fmtTime(a.paceSecPerKm)}/km</span> : null}
+          {a.raceDistanceKm ? <span className="tabular-nums"> (대회 {a.raceDistanceKm}km)</span> : null}
           {a.event && <span> · 🏁 {a.event}</span>}
+          {a.crew && <span> · 🏃 {a.crew} 크루</span>}
           {a.place && <span> · 📍 {a.place}</span>}
           {a.companions.length > 0 && <span> · 👥 {a.companions.join(', ')}</span>}
+          {a.shoe && <span> · 👟 {a.shoe}</span>}
           {a.details.length > 0 && <div className="text-xs text-slate-600">훈련: {a.details.join(' / ')}</div>}
           {a.tags.length > 0 && <div className="text-xs text-slate-500">기타: {a.tags.join(', ')}</div>}
         </div>

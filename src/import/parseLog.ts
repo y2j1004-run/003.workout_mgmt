@@ -1,5 +1,10 @@
 // Parses the free-form workout log text ("MM.DD : 8키로(장소), 웨이트, 체지방률 14.5 ...")
 // into one structured entry per day. Anything the rules don't understand is kept, never dropped.
+//
+// Log conventions: "500", "436" are paces per km (5'00", 4'36"); "10k/h", "(워,11,12,13,쿨)" are
+// treadmill speeds in km/h; "혈압" is the systolic value.
+
+import { CREWS, HALF_MARATHON_KM, SHOES } from './dictionary'
 
 export type ActivityKind = 'run' | 'walk'
 
@@ -9,10 +14,15 @@ export interface Activity {
   place?: string
   /** race or group run: "경기마라톤", "가우스 달벙" */
   event?: string
+  /** running crew the run was with */
+  crew?: string
+  /** official distance when the logged distance includes warm-up (e.g. half marathon in a 23km day) */
+  raceDistanceKm?: number
+  shoe?: string
   companions: string[]
   /** training content such as "인터벌", "500*5km, 436*5km" */
   details: string[]
-  /** other words attached to the run (event names, shoes, ...) */
+  /** other words attached to the run */
   tags: string[]
   durationSec?: number
   paceSecPerKm?: number
@@ -20,7 +30,8 @@ export interface Activity {
 
 export interface Metrics {
   bodyFatPct?: number
-  bloodPressure?: number
+  /** systolic blood pressure */
+  systolicBp?: number
   weightKg?: number
   vo2max?: number
   heartRate?: number
@@ -283,7 +294,7 @@ function parseMetric(day: DayEntry, item: string): boolean {
   const m = day.metrics
   const patterns: [RegExp, keyof Metrics][] = [
     [/체지방률\s*(\d+(?:\.\d+)?)/, 'bodyFatPct'],
-    [/혈압\s*(\d+)/, 'bloodPressure'],
+    [/혈압\s*(\d+)/, 'systolicBp'],
     [/체중\s*(\d+(?:\.\d+)?)/, 'weightKg'],
     [/(?:최대산소섭취량|최대산소|VO2\s*max)\D*(\d+(?:\.\d+)?)/i, 'vo2max'],
     [/심박수\s*(\d+)/, 'heartRate'],
@@ -311,11 +322,46 @@ function finalize(day: DayEntry) {
     const vo2 = note.match(/VO2\s*max\D*(\d+(?:\.\d+)?)/i)
     if (vo2 && !day.metrics.vo2max) day.metrics.vo2max = Number(vo2[1])
   }
+  // a bare number like "338" carries no meaning on its own
+  day.notes = day.notes.filter((n) => !/^\d+$/.test(n))
   for (const a of day.activities) {
+    pickShoe(a)
+    pickCrew(a)
+    pickRaceDistance(a)
     if (a.durationSec && !a.paceSecPerKm && a.distanceKm > 0) {
-      a.paceSecPerKm = Math.round(a.durationSec / a.distanceKm)
+      a.paceSecPerKm = Math.round(a.durationSec / (a.raceDistanceKm ?? a.distanceKm))
     }
   }
+}
+
+function pickShoe(a: Activity) {
+  const isShoe = (t: string) => SHOES.includes(t)
+  const fromTags = a.tags.find(isShoe)
+  if (fromTags) {
+    a.shoe = fromTags
+    a.tags = a.tags.filter((t) => t !== fromTags)
+  } else if (a.place && isShoe(a.place)) {
+    a.shoe = a.place
+    a.place = undefined
+  }
+}
+
+function pickCrew(a: Activity) {
+  const crew = a.companions.find((c) => CREWS.includes(c))
+  if (crew) {
+    a.crew = crew
+    a.companions = a.companions.filter((c) => c !== crew)
+  }
+  const prefix = a.event && CREWS.find((c) => a.event!.toLowerCase().startsWith(c.toLowerCase()))
+  if (prefix) a.crew = prefix
+}
+
+// "23키로(서울레이스, 1시간31분51초)": the day includes warm-up, the time is for the half marathon
+function pickRaceDistance(a: Activity) {
+  const text = [a.event, ...a.details].join(' ')
+  const isRace = !!a.event && /마라톤|레이스|대회/.test(a.event) && !a.crew
+  const halfLike = /하프|21K/i.test(text) || (isRace && !!a.durationSec && a.distanceKm > 21.1 && a.distanceKm <= 25)
+  if (halfLike && Math.abs(a.distanceKm - HALF_MARATHON_KM) > 0.1) a.raceDistanceKm = HALF_MARATHON_KM
 }
 
 /** names seen after "w/" are also recognized when written without it: "(광교호수공원, 친구)" */
