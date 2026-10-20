@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseGarminCsv } from './garminCsv'
-import { findDuplicates, mergeGarmin, pairByDistance, repairDay } from './mergeGarmin'
+import { mergeGarmin, pairByDistance } from './mergeGarmin'
 import { parseLog, type DayEntry } from './parseLog'
 
 const empty = (date: string): DayEntry => ({ date, activities: [], metrics: {}, stretching: false, rest: false, notes: [], issues: [], raw: [] })
@@ -23,65 +23,36 @@ describe('pairing runs of the same day', () => {
   })
 })
 
-describe('mergeGarmin on logged days', () => {
-  it('attaches a treadmill reading far from the logged distance instead of adding a second run', () => {
+describe('mergeGarmin, watch first', () => {
+  it('pairs a treadmill reading with the logged run and takes the watch distance', () => {
     const { days, stats } = mergeGarmin(logged, csv('Treadmill Running,2026-10-13 06:00:00,5.10,00:35:00\nRunning,2026-10-13 19:00:00,10.31,00:50:00\n'), empty)
-    expect(stats).toMatchObject({ matched: 2, added: 0, extras: [] })
+    expect(stats).toMatchObject({ matched: 2, added: 0 })
     const runs = days.find((d) => d.date === '2026-10-13')!.activities
-    expect(runs.map((a) => [a.distanceKm, a.garmin?.distanceKm])).toEqual([
-      [6.4, 5.1],
-      [10.2, 10.31],
+    expect(runs.map((a) => [a.distanceKm, a.durationSec, a.place, a.appEdits?.logDistanceKm])).toEqual([
+      [5.1, 2100, undefined, 6.4],
+      [10.31, 3000, '동백역-기흥역', 10.2],
     ])
   })
 
-  it('reports a watch run with no logged partner instead of adding it, unless the user asks', () => {
-    const rows = csv('Running,2026-10-15 05:30:00,2.01,00:12:00\nRunning,2026-10-15 06:00:00,14.05,01:01:00\n')
-    const first = mergeGarmin(logged, rows, empty)
-    expect(first.stats.matched).toBe(1)
-    expect(first.stats.extras.map((g) => g.distanceKm)).toEqual([2.01])
-    expect(first.days.find((d) => d.date === '2026-10-15')!.activities).toHaveLength(1)
-
-    const chosen = mergeGarmin(logged, rows, empty, new Set([rows[0].startTime]))
-    expect(chosen.stats).toMatchObject({ added: 1, extras: [] })
+  it('adds every watch run with no logged partner, on logged days too', () => {
+    const { days, stats } = mergeGarmin(logged, csv('Running,2026-10-15 05:30:00,2.01,00:12:00\nRunning,2026-10-15 06:00:00,14.05,01:01:00\n'), empty)
+    expect(stats).toMatchObject({ matched: 1, added: 1 })
+    expect(days.find((d) => d.date === '2026-10-15')!.activities.map((a) => a.distanceKm)).toEqual([14.05, 2.01])
   })
 
-  it('still adds watch runs on days with nothing logged', () => {
-    const { stats } = mergeGarmin(logged, csv('Running,2026-10-16 06:00:00,6.50,00:35:00\n'), empty)
-    expect(stats).toMatchObject({ added: 1, extras: [] })
-  })
-})
-
-describe('cleaning up duplicates from earlier imports', () => {
-  // what the old rule produced: the treadmill reading was added as a second run
-  const broken: DayEntry = {
-    ...logged[0],
-    activities: [
-      ...logged[0].activities.map((a, i) => (i === 1 ? { ...a, garmin: { startTime: 'b', distanceKm: 10.31, durationSec: 3000 } } : a)),
-      { kind: 'run', distanceKm: 5.1, source: 'garmin', garmin: { startTime: 'a', distanceKm: 5.1, durationSec: 2100 }, companions: [], details: [], tags: [] },
-      { kind: 'run', distanceKm: 1.5, source: 'garmin', garmin: { startTime: 'c', distanceKm: 1.5 }, companions: [], details: [], tags: [] },
-    ],
-  }
-
-  it('finds the watch copy of a logged run and leftovers', () => {
-    const report = findDuplicates([broken])
-    expect(report.pairs).toEqual([{ date: '2026-10-13', loggedIndex: 0, garminIndex: 2, loggedKm: 6.4, garminKm: 5.1 }])
-    expect(report.extras).toEqual([{ date: '2026-10-13', index: 3, km: 1.5 }])
-  })
-
-  it('moves the watch data onto the logged run and hides the copies', () => {
-    const report = findDuplicates([broken])
-    const fixed = repairDay(broken, report.pairs, [3])
-    const live = fixed.activities.filter((a) => !a.deleted)
-    expect(live.map((a) => [a.distanceKm, a.garmin?.startTime, a.durationSec])).toEqual([
-      [6.4, 'a', 2100],
-      [10.2, 'b', undefined],
+  it('keeps a logged run with no watch partner as it is', () => {
+    const { days } = mergeGarmin(logged, csv('Running,2026-10-13 19:00:00,10.31,00:50:00\n'), empty)
+    expect(days[0].activities.map((a) => [a.distanceKm, a.garmin?.distanceKm])).toEqual([
+      [6.4, undefined],
+      [10.31, 10.31],
     ])
-    expect(findDuplicates([fixed])).toEqual({ pairs: [], extras: [] })
   })
 
-  it('a later import of the same file does not bring the copies back', () => {
-    const fixed = repairDay(broken, findDuplicates([broken]).pairs, [3])
-    const again = mergeGarmin([fixed], csv('Treadmill Running,2026-10-13 06:00:00,5.10,00:35:00\n').map((g) => ({ ...g, startTime: 'a' })), empty)
-    expect(again.stats).toMatchObject({ updated: 1, added: 0, extras: [] })
+  it('keeps a distance or time the user set by hand', () => {
+    const edited = structuredClone(logged)
+    edited[1].activities[0].appEdits = { distanceKm: 14, durationSec: 3600 }
+    edited[1].activities[0].durationSec = 3600
+    const { days } = mergeGarmin(edited, csv('Running,2026-10-15 06:00:00,14.05,01:01:00\n'), empty)
+    expect(days[0].activities[0]).toMatchObject({ distanceKm: 14, durationSec: 3600, garmin: { distanceKm: 14.05 } })
   })
 })

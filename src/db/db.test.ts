@@ -56,7 +56,7 @@ describe('garmin', () => {
     await saveDays(log('06.01 : 10키로(공원), 웨이트'))
     const day = await db.days.get('2026-06-01')
     expect(day?.activities).toHaveLength(1)
-    expect(day?.activities[0]).toMatchObject({ distanceKm: 10, place: '공원', garmin: { avgHr: 150 }, durationSec: 3000 })
+    expect(day?.activities[0]).toMatchObject({ distanceKm: 10.05, place: '공원', garmin: { avgHr: 150 }, durationSec: 3000 })
   })
 })
 
@@ -66,6 +66,16 @@ describe('garmin then log re-import', () => {
     await saveGarmin(parseGarminCsv('Activity Type,Date,Distance,Time\nTreadmill Running,2026-06-03 06:00:00,5.10,00:35:00\n').activities)
     await saveDays(log('06.03 : 6.4키로, 웨이트'))
     const day = await db.days.get('2026-06-03')
-    expect(day?.activities.map((a) => [a.distanceKm, a.garmin?.distanceKm])).toEqual([[6.4, 5.1]])
+    expect(day?.activities.map((a) => [a.distanceKm, a.garmin?.distanceKm])).toEqual([[5.1, 5.1]])
+  })
+
+  it('keeps the watch distance when the text log is imported again after pairing', async () => {
+    const { parseGarminCsv } = await import('../import/garminCsv')
+    await saveDays(log('06.04 : 8키로(공원)'))
+    await saveGarmin(parseGarminCsv('Activity Type,Date,Distance,Time\nRunning,2026-06-04 06:00:00,8.62,00:43:00\n').activities)
+    await saveDays(log('06.04 : 8키로(공원)'))
+    await saveDays(log('06.04 : 8키로(공원)'))
+    const day = await db.days.get('2026-06-04')
+    expect(day?.activities.map((a) => [a.distanceKm, a.place, a.durationSec])).toEqual([[8.62, '공원', 2580]])
   })
 })

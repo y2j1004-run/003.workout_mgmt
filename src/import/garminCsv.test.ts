@@ -53,15 +53,15 @@ describe('mergeGarmin', () => {
 10.20 : 12키로(527*10km)
 `).days
 
-  it('attaches watch data to the logged run of about the same distance', () => {
+  it('gives the logged run the watch distance and time, keeping what only the log has', () => {
     const { days, stats } = mergeGarmin(logged, parseGarminCsv(english + korean.split('\n').slice(1).join('\n')).activities, empty)
     const run = (date: string) => days.find((d) => d.date === date)!.activities[0]
-    expect(run('2026-10-20')).toMatchObject({ distanceKm: 12, durationSec: 3790, paceSecPerKm: 315, garmin: { avgHr: 148 } })
+    expect(run('2026-10-20')).toMatchObject({ distanceKm: 12.03, durationSec: 3790, paceSecPerKm: 315, garmin: { avgHr: 148 }, details: ['527*10km'] })
     expect(run('2026-10-19').garmin?.durationSec).toBe(2120)
     // race with warm-up keeps its own pace basis
     expect(run('2026-10-17')).toMatchObject({ raceDistanceKm: 21.0975, garmin: { durationSec: 6000 } })
     expect(run('2026-10-17').durationSec).toBeUndefined()
-    expect(stats).toEqual({ matched: 3, added: 0, updated: 0, strengthDays: 0, ignored: 1, extras: [] })
+    expect(stats).toEqual({ matched: 3, added: 0, updated: 0, strengthDays: 0, ignored: 1 })
   })
 
   it('adds unmatched watch runs and recognizes a re-imported file', () => {
