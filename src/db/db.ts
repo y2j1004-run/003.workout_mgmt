@@ -201,10 +201,10 @@ async function ensureShoes(names: (string | undefined)[]) {
 const newShoe = (name: string): Shoe => ({ name, initialKm: 0, retired: false, createdAt: Date.now() })
 
 /** Adds a run entered in the app to the day (creating the day if needed). */
-export async function addRun(date: string, distanceKm: number, shoe?: string, theme?: string) {
+export async function addRun(date: string, distanceKm: number, shoe?: string, theme?: string, place?: string) {
   await db.transaction('rw', db.days, db.shoes, async () => {
     const day = (await db.days.get(date)) ?? emptyDay(date)
-    const run: Activity = { kind: 'run', distanceKm, shoe, theme, source: 'app', companions: [], details: [], tags: [] }
+    const run: Activity = { kind: 'run', distanceKm, shoe, theme, place: place?.trim() || undefined, source: 'app', companions: [], details: [], tags: [] }
     await db.days.put({ ...day, activities: [...day.activities, run], savedAt: Date.now() })
     await ensureShoes([shoe])
   })
