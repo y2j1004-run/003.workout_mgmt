@@ -58,3 +58,20 @@ describe('editing and deleting runs', () => {
     expect((await runs()).filter((r) => r[0] === '2026-10-20')).toEqual([['2026-10-20', 12, undefined]])
   })
 })
+
+describe('run themes and Garmin places', () => {
+  it('keeps a chosen theme after re-importing the log', async () => {
+    await editRun('2026-10-19', 0, { date: '2026-10-19', distanceKm: 8, theme: '지속주' })
+    await saveDays(log())
+    expect((await db.days.get('2026-10-19'))?.activities[0].theme).toBe('지속주')
+  })
+
+  it('uses the Garmin title as the place when the run has none', async () => {
+    await saveGarmin(
+      parseGarminCsv('Activity Type,Date,Title,Distance,Time\nRunning,2026-10-19 06:00:00,용인시 러닝,8.05,00:40:00\nRunning,2026-10-21 06:00:00,수원시 러닝,10.0,00:50:00\n').activities,
+    )
+    expect((await db.days.get('2026-10-19'))?.activities[0].place).toBe('용인시')
+    expect((await db.days.get('2026-10-21'))?.activities[0].place).toBe('수원시')
+    expect((await db.days.get('2026-10-18'))?.activities[0].place).toBe('공원')
+  })
+})

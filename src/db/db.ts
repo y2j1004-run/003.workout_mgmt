@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { GarminActivity } from '../import/garminCsv'
-import { mergeGarmin, pairByDistance, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
+import { applyGarmin, mergeGarmin, pairByDistance, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
 import type { Activity, DayEntry, RaceEdits } from '../import/parseLog'
 import { mergeRecord, type InBodyRecord } from '../inbody/inbody'
 
@@ -73,7 +73,9 @@ function mergeAppEdits(next: DayEntry, prev?: DayEntry): DayEntry {
     const before = fromLog[i]
     if (!before || !sameRun(before.appEdits?.logDistanceKm ?? before.distanceKm, a.distanceKm)) return a
     const carried = { ...a, shoe: a.shoe ?? before.shoe, garmin: before.garmin, durationSec: a.durationSec ?? before.durationSec, paceSecPerKm: a.paceSecPerKm ?? before.paceSecPerKm }
-    return before.appEdits ? applyRaceEdits(carried, before.appEdits) : carried
+    const edited = before.appEdits ? applyRaceEdits(carried, before.appEdits) : carried
+    applyGarmin(edited)
+    return edited
   })
   // a watch run that now also appears in the log joins that run instead of being counted twice
   const extras = prev.activities.filter((p) => p.source)
@@ -85,7 +87,8 @@ function mergeAppEdits(next: DayEntry, prev?: DayEntry): DayEntry {
     open.map((a) => a.distanceKm),
   )) {
     const w = watch[wi]
-    Object.assign(open[oi], { garmin: w.garmin, shoe: open[oi].shoe ?? w.shoe, durationSec: open[oi].durationSec ?? w.durationSec, paceSecPerKm: open[oi].paceSecPerKm ?? w.paceSecPerKm })
+    Object.assign(open[oi], { garmin: w.garmin, shoe: open[oi].shoe ?? w.shoe, theme: open[oi].theme ?? w.theme })
+    applyGarmin(open[oi])
     joined.add(w)
   }
   activities.push(...extras.filter((e) => !joined.has(e)))
@@ -100,6 +103,7 @@ export function applyRaceEdits(a: Activity, edits: RaceEdits): Activity {
     next.distanceKm = edits.distanceKm
   }
   if (edits.place !== undefined) next.place = edits.place || undefined
+  if (edits.theme !== undefined) next.theme = edits.theme || undefined
   if (edits.deleted !== undefined) next.deleted = edits.deleted || undefined
   if (edits.race !== undefined) next.race = edits.race
   if (edits.event !== undefined) next.event = edits.event || undefined
@@ -125,6 +129,7 @@ export interface RunChanges {
   date: string
   distanceKm: number
   place?: string
+  theme?: string
   durationSec?: number
 }
 
@@ -137,7 +142,7 @@ export async function editRun(date: string, index: number, c: RunChanges) {
     const day = await db.days.get(date)
     const run = day?.activities[index]
     if (!day || !run) return
-    const edits: RaceEdits = { distanceKm: c.distanceKm, place: c.place ?? null, durationSec: c.durationSec ?? null }
+    const edits: RaceEdits = { distanceKm: c.distanceKm, place: c.place ?? null, theme: c.theme ?? null, durationSec: c.durationSec ?? null }
     if (c.date === date) {
       const activities = day.activities.map((a, i) => (i === index ? applyRaceEdits(a, edits) : a))
       await db.days.put({ ...day, activities, savedAt: Date.now() })
@@ -176,11 +181,11 @@ export async function addRace(date: string, event: string, distanceKm: number, d
 }
 
 /** Merges a Garmin Connect export into the stored days. */
-export async function saveGarmin(activities: GarminActivity[], addAnyway?: Set<string>): Promise<GarminMergeStats> {
+export async function saveGarmin(activities: GarminActivity[]): Promise<GarminMergeStats> {
   return db.transaction('rw', db.days, async () => {
     const dates = [...new Set(activities.map((a) => a.date))]
     const existing = (await db.days.bulkGet(dates)).filter((d) => !!d)
-    const { days, stats } = mergeGarmin(existing, activities, emptyDay, addAnyway)
+    const { days, stats } = mergeGarmin(existing, activities, emptyDay)
     const savedAt = Date.now()
     await db.days.bulkPut(days.map((d) => ({ ...d, savedAt })))
     return stats
@@ -196,10 +201,10 @@ async function ensureShoes(names: (string | undefined)[]) {
 const newShoe = (name: string): Shoe => ({ name, initialKm: 0, retired: false, createdAt: Date.now() })
 
 /** Adds a run entered in the app to the day (creating the day if needed). */
-export async function addRun(date: string, distanceKm: number, shoe?: string) {
+export async function addRun(date: string, distanceKm: number, shoe?: string, theme?: string) {
   await db.transaction('rw', db.days, db.shoes, async () => {
     const day = (await db.days.get(date)) ?? emptyDay(date)
-    const run: Activity = { kind: 'run', distanceKm, shoe, source: 'app', companions: [], details: [], tags: [] }
+    const run: Activity = { kind: 'run', distanceKm, shoe, theme, source: 'app', companions: [], details: [], tags: [] }
     await db.days.put({ ...day, activities: [...day.activities, run], savedAt: Date.now() })
     await ensureShoes([shoe])
   })

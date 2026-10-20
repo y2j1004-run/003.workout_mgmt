@@ -32,6 +32,8 @@ export interface Activity {
   companions: string[]
   /** training content such as "인터벌", "500*5km, 436*5km" */
   details: string[]
+  /** what the run was for, chosen by the user ("인터벌", "LSD", ...); see themeOf for the inferred one */
+  theme?: string
   /** other words attached to the run */
   tags: string[]
   durationSec?: number
@@ -43,6 +45,7 @@ export interface RaceEdits {
   /** the distance the log had before the user changed it, used to recognize the run on re-import */
   logDistanceKm?: number
   place?: string | null
+  theme?: string | null
   deleted?: boolean
   race?: boolean
   event?: string
