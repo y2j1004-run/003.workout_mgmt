@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type ReactNode } from 'react'
 import LineChart from '../components/charts/LineChart'
+import PhotoImport from '../components/PhotoImport'
 import { db, saveInBody } from '../db/db'
 import { checkRecord, parseInBodyCsv, type InBodyRecord } from '../inbody/inbody'
 
@@ -36,6 +37,7 @@ export default function InBody() {
             </Card>
           ),
       )}
+      <PhotoImport />
       <ManualEntry />
       <PasteImport />
       {records.length > 0 && <History records={records} />}

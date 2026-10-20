@@ -1,3 +1,4 @@
+import ApiKeyCard from '../components/ApiKeyCard'
 import BackupRestore from '../components/BackupRestore'
 import GarminImport from '../components/GarminImport'
 import ImportLog from '../components/ImportLog'
@@ -10,7 +11,8 @@ export default function Settings() {
       <ImportLog />
       <GarminImport />
       <BackupRestore />
-      <Placeholder title="" items={['인바디 사진 일괄 가져오기', '목표 설정']} />
+      <ApiKeyCard />
+      <Placeholder title="" items={['목표 설정']} />
       <p className="text-center text-xs text-slate-400 tabular-nums">앱 버전 {new Date(__BUILD_TIME__).toLocaleString('ko-KR')}</p>
     </div>
   )
