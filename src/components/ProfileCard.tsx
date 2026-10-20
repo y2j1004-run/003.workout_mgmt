@@ -92,7 +92,9 @@ export default function ProfileCard() {
       <button
         disabled={!heightOk || !yearOk || !maxOk}
         onClick={async () => {
-          const p: Profile = {}
+          // the name and sports are kept by the 내 프로필 card
+          const { name, sports } = await getProfile()
+          const p: Profile = { name, sports }
           if (sex) p.sex = sex
           if (height.trim()) p.heightCm = h
           if (birthYear.trim()) p.birthYear = y

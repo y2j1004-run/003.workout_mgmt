@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { goalProgress, runStreak, weekSummary } from '../analytics/home'
 import { bodyFatSeries, runsOf } from '../analytics/stats'
 import { db } from '../db/db'
-import { getGoals } from '../db/goals'
+import { customGoalRatio, getCustomGoals, getGoals, updateCustomGoal } from '../db/goals'
+import { getProfile } from '../db/profile'
 import type { InBodyRecord } from '../inbody/inbody'
 
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
@@ -14,7 +15,9 @@ export default function Home() {
   const days = useLiveQuery(() => db.days.orderBy('date').toArray())
   const inbody = useLiveQuery(() => db.inbody.orderBy('date').toArray())
   const goals = useLiveQuery(getGoals)
-  if (!days || !inbody || !goals) return null
+  const custom = useLiveQuery(getCustomGoals)
+  const profile = useLiveQuery(getProfile)
+  if (!days || !inbody || !goals || !custom || !profile) return null
 
   const now = today()
   const dateLabel = new Date(`${now}T00:00:00`).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })
@@ -22,7 +25,7 @@ export default function Home() {
   if (!days.length && !inbody.length) {
     return (
       <section className="space-y-4">
-        <Header date={dateLabel} />
+        <Header date={dateLabel} name={profile.name} sports={profile.sports} />
         <Card title="시작하기">
           <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">
             <li>⚙️ 설정 → 운동 기록 가져오기로 메모장 기록을 넣거나</li>
@@ -51,7 +54,7 @@ export default function Home() {
 
   return (
     <section className="space-y-4">
-      <Header date={dateLabel} streak={streak} />
+      <Header date={dateLabel} streak={streak} name={profile.name} sports={profile.sports} />
 
       <Card title="이번 주">
         <div className="flex items-end justify-between gap-3">
@@ -81,26 +84,56 @@ export default function Home() {
       </Card>
 
       <Card title="목표">
-        {progress.length ? (
-          <ul className="space-y-3">
-            {progress.map((g) => (
-              <li key={g.key}>
-                <div className="flex items-baseline justify-between text-sm">
-                  <span className="font-semibold">
-                    {g.label} {g.done && <span className="text-teal-700">✓</span>}
-                  </span>
-                  <span className="tabular-nums">
-                    {g.current != null ? `${g.current}${g.unit}` : '-'} <span className="text-xs text-slate-500">/ {g.target}{g.unit}</span>
-                  </span>
-                </div>
-                <div className="mt-1 h-2 rounded-full bg-slate-100">
-                  <div className="h-2 rounded-full bg-teal-700" style={{ width: `${Math.round(g.ratio * 100)}%` }} />
-                </div>
-              </li>
-            ))}
-          </ul>
+        {progress.length || custom.length ? (
+          <>
+            <ul className="space-y-3">
+              {progress.map((g) => (
+                <li key={g.key}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="font-semibold">
+                      {g.label} {g.done && <span className="text-teal-700">✓</span>}
+                    </span>
+                    <span className="tabular-nums">
+                      {g.current != null ? `${g.current}${g.unit}` : '-'} <span className="text-xs text-slate-500">/ {g.target}{g.unit}</span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 rounded-full bg-slate-100">
+                    <div className="h-2 rounded-full bg-teal-700" style={{ width: `${Math.round(g.ratio * 100)}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {custom.length > 0 && (
+              <ul className={`space-y-3 ${progress.length ? 'mt-3 border-t border-slate-100 pt-3' : ''}`}>
+                {custom.map((g) => (
+                  <li key={g.id}>
+                    <div className="flex items-baseline justify-between gap-2 text-sm">
+                      <label className="flex min-w-0 items-center gap-2 font-semibold">
+                        <input type="checkbox" checked={!!g.done} onChange={(e) => updateCustomGoal(g.id, { done: e.target.checked })} className="h-4 w-4 shrink-0 accent-teal-700" />
+                        <span className={g.done ? 'text-slate-400 line-through' : ''}>{g.title}</span>
+                      </label>
+                      <span className="shrink-0 tabular-nums">
+                        {g.target != null ? (
+                          <>
+                            {g.current ?? '-'}
+                            {g.unit ?? ''} <span className="text-xs text-slate-500">/ {g.target}{g.unit ?? ''}</span>
+                        </>
+                      ) : null}
+                      {g.due && <span className="ml-1 text-xs text-slate-500">~{g.due.slice(5).replace('-', '.')}</span>}
+                    </span>
+                  </div>
+                  {g.target != null && (
+                    <div className="mt-1 h-2 rounded-full bg-slate-100">
+                      <div className="h-2 rounded-full bg-teal-700" style={{ width: `${Math.round(customGoalRatio(g) * 100)}%` }} />
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          </>
         ) : (
-          <p className="text-sm text-slate-500">⚙️ 설정 → 목표 설정에서 주간 거리나 목표 체지방률을 정하면 진행률이 나옵니다.</p>
+          <p className="text-sm text-slate-500">⚙️ 설정 → 목표 설정에서 주간 거리나 목표 체지방률을 정하거나, 나만의 목표를 추가하면 여기에 나옵니다.</p>
         )}
       </Card>
 
@@ -128,12 +161,15 @@ export default function Home() {
   )
 }
 
-function Header({ date, streak = 0 }: { date: string; streak?: number }) {
+function Header({ date, streak = 0, name, sports }: { date: string; streak?: number; name?: string; sports?: string[] }) {
   return (
-    <div className="flex items-baseline justify-between">
-      <div>
-        <h1 className="text-2xl font-bold">홈</h1>
-        <p className="text-sm text-slate-500">{date}</p>
+    <div className="flex items-baseline justify-between gap-2">
+      <div className="min-w-0">
+        <h1 className="truncate text-2xl font-bold">{name ? `${name}님` : '홈'}</h1>
+        <p className="text-sm text-slate-500">
+          {date}
+          {sports?.length ? ` · ${sports.join(' · ')}` : ''}
+        </p>
       </div>
       {streak >= 2 && <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 tabular-nums">🔥 {streak}일 연속 러닝</span>}
     </div>
