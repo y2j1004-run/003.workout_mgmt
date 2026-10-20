@@ -1,8 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { ReactNode } from 'react'
-import { bodyFatSeries, crewCounts, fmtTime, metricSeries, monthlyKm, races, shoeTotals, summary } from '../analytics/stats'
+import { bodyFatSeries, crewCounts, metricSeries, monthlyKm, shoeTotals, summary } from '../analytics/stats'
 import BarChart from '../components/charts/BarChart'
 import LineChart from '../components/charts/LineChart'
+import RaceRecords from '../components/RaceRecords'
 import { db } from '../db/db'
 
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
@@ -30,7 +31,6 @@ export default function Stats() {
   const bodyFat = bodyFatSeries(days, inbody)
   const bp = metricSeries(days, 'systolicBp')
   const shoes = shoeTotals(days, shoeList).filter((sh) => sh.km > 0)
-  const raceList = races(days)
   const crews = crewCounts(days)
   const lastBf = bodyFat.at(-1)
   const bfChange = lastBf && bodyFat.length > 1 ? lastBf.value - bodyFat[0].value : undefined
@@ -93,26 +93,7 @@ export default function Stats() {
         </Card>
       )}
 
-      {raceList.length > 0 && (
-        <Card title="대회 기록">
-          <ul className="divide-y divide-slate-100 text-sm">
-            {raceList.map((r) => (
-              <li key={r.date + r.event} className="flex items-baseline justify-between gap-2 py-2">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold">{r.event}</div>
-                  <div className="text-xs text-slate-500 tabular-nums">
-                    {r.date} · {km(r.raceDistanceKm ?? r.distanceKm)}
-                  </div>
-                </div>
-                <div className="shrink-0 text-right tabular-nums">
-                  <div className="font-semibold">{r.durationSec ? fmtTime(r.durationSec) : '-'}</div>
-                  {r.paceSecPerKm ? <div className="text-xs text-slate-500">{fmtTime(r.paceSecPerKm)}/km</div> : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      <RaceRecords days={days} />
 
       {crews.length > 0 && (
         <Card title="크루 활동">

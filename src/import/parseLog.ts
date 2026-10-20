@@ -23,6 +23,10 @@ export interface Activity {
   source?: 'app' | 'garmin'
   /** values recorded by the watch (Garmin Connect export) */
   garmin?: GarminData
+  /** set by the user: true/false overrides whether this run counts as a race */
+  race?: boolean
+  /** race fields the user corrected in the app; re-applied when the text log is imported again */
+  appEdits?: RaceEdits
   companions: string[]
   /** training content such as "인터벌", "500*5km, 436*5km" */
   details: string[]
@@ -30,6 +34,14 @@ export interface Activity {
   tags: string[]
   durationSec?: number
   paceSecPerKm?: number
+}
+
+export interface RaceEdits {
+  race?: boolean
+  event?: string
+  /** null clears the value */
+  raceDistanceKm?: number | null
+  durationSec?: number | null
 }
 
 export interface GarminData {
