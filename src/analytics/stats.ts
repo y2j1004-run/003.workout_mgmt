@@ -45,6 +45,13 @@ export interface ShoeTotal {
   retired: boolean
 }
 
+/** Body fat % from the text log and InBody records together; InBody wins on the same date. */
+export function bodyFatSeries(days: DayEntry[], inbody: { date: string; bodyFatPct?: number }[]): { date: string; value: number }[] {
+  const byDate = new Map(metricSeries(days, 'bodyFatPct').map((p) => [p.date, p.value]))
+  for (const r of inbody) if (r.bodyFatPct != null) byDate.set(r.date, r.bodyFatPct)
+  return [...byDate].map(([date, value]) => ({ date, value })).sort((a, b) => a.date.localeCompare(b.date))
+}
+
 export function shoeTotals(days: DayEntry[], shoes: { name: string; initialKm: number; retired: boolean }[] = []): ShoeTotal[] {
   const map = new Map<string, DatedActivity[]>()
   for (const r of runsOf(days)) if (r.shoe) map.set(r.shoe, [...(map.get(r.shoe) ?? []), r])

@@ -2,24 +2,26 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { parseLog } from '../import/parseLog'
 import { createBackup, lastBackupAt, markBackedUp, readBackup, restoreBackup } from './backup'
-import { db, saveDays, updateShoe } from './db'
+import { db, saveDays, saveInBody, updateShoe } from './db'
 
 const log = (body: string) => parseLog(`[ 2026년 ]\n${body}`).days
 
 beforeEach(async () => {
-  await Promise.all([db.days.clear(), db.shoes.clear(), db.meta.clear()])
+  await Promise.all([db.days.clear(), db.shoes.clear(), db.meta.clear(), db.inbody.clear()])
 })
 
 describe('backup', () => {
   it('round-trips days and shoes through JSON', async () => {
     await saveDays(log('06.01 : 10키로(공원, 디나엘4)\n06.02 : 5키로'))
     await updateShoe('디나엘4', { initialKm: 300 })
+    await saveInBody([{ date: '2026-06-01', source: 'sheet', weightKg: 60 }])
     const file = JSON.parse(JSON.stringify(await createBackup()))
-    await Promise.all([db.days.clear(), db.shoes.clear()])
+    await Promise.all([db.days.clear(), db.shoes.clear(), db.inbody.clear()])
 
     await restoreBackup(readBackup(file), 'replace')
     expect(await db.days.count()).toBe(2)
     expect(await db.shoes.get('디나엘4')).toMatchObject({ initialKm: 300 })
+    expect(await db.inbody.get('2026-06-01')).toMatchObject({ weightKg: 60 })
   })
 
   it('merge keeps newer phone data and adds missing days', async () => {

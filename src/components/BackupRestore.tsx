@@ -61,7 +61,7 @@ export default function BackupRestore() {
   const restore = async (mode: RestoreMode) => {
     if (!pending) return
     const r = await restoreBackup(pending, mode)
-    setMsg(`복원했습니다. 기록 ${r.days}일, 신발 ${r.shoes}켤레.`)
+    setMsg(`복원했습니다. 기록 ${r.days}일, 신발 ${r.shoes}켤레, 인바디 ${r.inbody}회.`)
     setPending(undefined)
     setConfirmReplace(false)
   }
@@ -98,7 +98,7 @@ export default function BackupRestore() {
       {pending && (
         <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
           <p className="tabular-nums">
-            {pending.exportedAt.slice(0, 10)}에 만든 백업 · 기록 {pending.days.length}일 · 신발 {pending.shoes.length}켤레
+            {pending.exportedAt.slice(0, 10)}에 만든 백업 · 기록 {pending.days.length}일 · 신발 {pending.shoes.length}켤레 · 인바디 {pending.inbody?.length ?? 0}회
           </p>
           <button onClick={() => restore('merge')} className="w-full rounded-lg bg-teal-700 py-2 font-semibold text-white">
             지금 기록에 합치기

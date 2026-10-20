@@ -1,3 +1,4 @@
+import type { InBodyRecord } from '../inbody/inbody'
 import { db, type Shoe, type StoredDay } from './db'
 
 const APP = 'workout-mgmt'
@@ -9,11 +10,13 @@ export interface Backup {
   exportedAt: string
   days: StoredDay[]
   shoes: Shoe[]
+  /** added later; older backups don't have it */
+  inbody?: InBodyRecord[]
 }
 
 export async function createBackup(): Promise<Backup> {
-  const [days, shoes] = await Promise.all([db.days.orderBy('date').toArray(), db.shoes.toArray()])
-  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes }
+  const [days, shoes, inbody] = await Promise.all([db.days.orderBy('date').toArray(), db.shoes.toArray(), db.inbody.orderBy('date').toArray()])
+  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody }
 }
 
 export function backupFileName(b: Backup) {
@@ -48,12 +51,15 @@ export type RestoreMode = 'merge' | 'replace'
  * merge: keeps what is on the phone and adds the backup; for a date in both, the more recently saved one wins.
  * replace: deletes everything on the phone first.
  */
-export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ days: number; shoes: number }> {
-  return db.transaction('rw', db.days, db.shoes, async () => {
+export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ days: number; shoes: number; inbody: number }> {
+  return db.transaction('rw', db.days, db.shoes, db.inbody, async () => {
     if (mode === 'replace') {
       await db.days.clear()
       await db.shoes.clear()
+      await db.inbody.clear()
     }
+    // InBody records carry no save time; the backup copy wins for the same date
+    await db.inbody.bulkPut(b.inbody ?? [])
     const current = new Map((await db.days.bulkGet(b.days.map((d) => d.date))).filter((d) => !!d).map((d) => [d.date, d]))
     const days = b.days.filter((d) => {
       const mine = current.get(d.date)
@@ -61,6 +67,6 @@ export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ day
     })
     await db.days.bulkPut(days)
     await db.shoes.bulkPut(b.shoes)
-    return { days: days.length, shoes: b.shoes.length }
+    return { days: days.length, shoes: b.shoes.length, inbody: b.inbody?.length ?? 0 }
   })
 }
