@@ -61,7 +61,7 @@ describe('mergeGarmin', () => {
     // race with warm-up keeps its own pace basis
     expect(run('2026-10-17')).toMatchObject({ raceDistanceKm: 21.0975, garmin: { durationSec: 6000 } })
     expect(run('2026-10-17').durationSec).toBeUndefined()
-    expect(stats).toEqual({ matched: 3, added: 0, updated: 0, strengthDays: 0, ignored: 1 })
+    expect(stats).toEqual({ matched: 3, added: 0, updated: 0, strengthDays: 0, ignored: 1, extras: [] })
   })
 
   it('adds unmatched watch runs and recognizes a re-imported file', () => {
@@ -76,5 +76,41 @@ describe('mergeGarmin', () => {
     expect(sameRun(12, 12.03)).toBe(true)
     expect(sameRun(21.1, 21.6)).toBe(true)
     expect(sameRun(6, 10)).toBe(false)
+  })
+})
+
+describe('distance units', () => {
+  it('reads meters, miles and km from the number, the cell or the header', async () => {
+    const { parseDistance } = await import('./garminCsv')
+    expect(parseDistance('10.02')).toEqual({ km: 10.02 })
+    expect(parseDistance('5,010')).toEqual({ km: 5.01, from: 'm' })
+    expect(parseDistance('800.00')).toEqual({ km: 0.8, from: 'm' })
+    expect(parseDistance('800 m')).toEqual({ km: 0.8, from: 'm' })
+    expect(parseDistance('3.1 mi')).toEqual({ km: 4.99, from: 'mi' })
+    expect(parseDistance('400', 'm')).toEqual({ km: 0.4, from: 'm' })
+    expect(parseDistance('12', 'km')).toEqual({ km: 12 })
+    // 60 "km" in 15 minutes is impossible, so it is 60m
+    expect(parseDistance('60', undefined, 900)).toEqual({ km: 0.06, from: 'm' })
+    expect(parseDistance('42.2', undefined, 13000)).toEqual({ km: 42.2 })
+  })
+
+  it('reads a file mixing km and meters, and a unit in the header', () => {
+    const mixed = parseGarminCsv('Activity Type,Date,Distance,Time\nRunning,2026-10-20 06:00:00,12.03,01:03:10\nTrack Running,2026-10-19 06:00:00,"8,000",00:36:00\n')
+    expect(mixed.activities.map((a) => [a.distanceKm, a.convertedFrom])).toEqual([
+      [12.03, undefined],
+      [8, 'm'],
+    ])
+    const header = parseGarminCsv('Activity Type,Date,Distance (m),Time\nRunning,2026-10-20 06:00:00,6400,00:35:00\n')
+    expect(header.columns.distance).toBe('Distance (m)')
+    expect(header.activities[0].distanceKm).toBe(6.4)
+  })
+
+  it('fixes a watch run first stored with meters read as km when the file is imported again', () => {
+    const wrong = parseGarminCsv('Activity Type,Date,Distance,Time\nRunning,2026-10-16 06:00:00,6.5,00:35:00\n').activities.map((g) => ({ ...g, distanceKm: 6500 }))
+    const first = mergeGarmin([], wrong, (date) => ({ date, activities: [], metrics: {}, stretching: false, rest: false, notes: [], issues: [], raw: [] }))
+    expect(first.days[0].activities[0].distanceKm).toBe(6500)
+    const right = parseGarminCsv('Activity Type,Date,Distance,Time\nRunning,2026-10-16 06:00:00,"6,500",00:35:00\n').activities
+    const again = mergeGarmin(first.days, right, (date) => ({ date, activities: [], metrics: {}, stretching: false, rest: false, notes: [], issues: [], raw: [] }))
+    expect(again.days[0].activities[0]).toMatchObject({ distanceKm: 6.5, durationSec: 2100, paceSecPerKm: 323 })
   })
 })

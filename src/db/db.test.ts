@@ -59,3 +59,13 @@ describe('garmin', () => {
     expect(day?.activities[0]).toMatchObject({ distanceKm: 10, place: '공원', garmin: { avgHr: 150 }, durationSec: 3000 })
   })
 })
+
+describe('garmin then log re-import', () => {
+  it('joins a watch-only treadmill run to the logged run that arrives later', async () => {
+    const { parseGarminCsv } = await import('../import/garminCsv')
+    await saveGarmin(parseGarminCsv('Activity Type,Date,Distance,Time\nTreadmill Running,2026-06-03 06:00:00,5.10,00:35:00\n').activities)
+    await saveDays(log('06.03 : 6.4키로, 웨이트'))
+    const day = await db.days.get('2026-06-03')
+    expect(day?.activities.map((a) => [a.distanceKm, a.garmin?.distanceKm])).toEqual([[6.4, 5.1]])
+  })
+})
