@@ -4,6 +4,10 @@ export type Sex = 'male' | 'female'
 
 /** Used to pick reference ranges; stays on the phone (and in backups). */
 export interface Profile {
+  /** name or nickname shown at the top of the home tab */
+  name?: string
+  /** the workouts the user does ("러닝", "웨이트", ...) */
+  sports?: string[]
   sex?: Sex
   heightCm?: number
   /** the birth year is enough for age-based ranges */

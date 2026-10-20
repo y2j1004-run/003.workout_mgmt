@@ -2,12 +2,14 @@ import BackupRestore from '../components/BackupRestore'
 import GarminImport from '../components/GarminImport'
 import ImportLog from '../components/ImportLog'
 import GoalsCard from '../components/GoalsCard'
+import MyProfileCard from '../components/MyProfileCard'
 import ProfileCard from '../components/ProfileCard'
 
 export default function Settings() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">설정</h1>
+      <MyProfileCard />
       <ImportLog />
       <GarminImport />
       <BackupRestore />
