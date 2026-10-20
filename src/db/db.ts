@@ -1,4 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
+import type { GarminActivity } from '../import/garminCsv'
+import { mergeGarmin, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
 import type { Activity, DayEntry } from '../import/parseLog'
 
 export interface StoredDay extends DayEntry {
@@ -38,14 +40,34 @@ export async function saveDays(days: DayEntry[]): Promise<{ added: number; repla
   return { added: days.length - old.size, replaced: old.size }
 }
 
+/** Carries what the app added to a day (shoes, app and watch runs) over to the freshly imported log entry. */
 function mergeAppEdits(next: DayEntry, prev?: DayEntry): DayEntry {
   if (!prev) return next
+  const fromLog = prev.activities.filter((p) => !p.source)
   const activities: Activity[] = next.activities.map((a, i) => {
-    const before = prev.activities.filter((p) => p.source !== 'app')[i]
-    return !a.shoe && before?.shoe && before.distanceKm === a.distanceKm ? { ...a, shoe: before.shoe } : a
+    const before = fromLog[i]
+    if (!before || !sameRun(before.distanceKm, a.distanceKm)) return a
+    return { ...a, shoe: a.shoe ?? before.shoe, garmin: before.garmin, durationSec: a.durationSec ?? before.durationSec, paceSecPerKm: a.paceSecPerKm ?? before.paceSecPerKm }
   })
-  activities.push(...prev.activities.filter((p) => p.source === 'app'))
+  for (const extra of prev.activities.filter((p) => p.source)) {
+    // a watch run that now also appears in the log joins that run instead of being counted twice
+    const twin = extra.source === 'garmin' && activities.find((a) => !a.garmin && !a.source && sameRun(a.distanceKm, extra.distanceKm))
+    if (twin) Object.assign(twin, { garmin: extra.garmin, shoe: twin.shoe ?? extra.shoe, durationSec: twin.durationSec ?? extra.durationSec, paceSecPerKm: twin.paceSecPerKm ?? extra.paceSecPerKm })
+    else activities.push(extra)
+  }
   return { ...next, activities }
+}
+
+/** Merges a Garmin Connect export into the stored days. */
+export async function saveGarmin(activities: GarminActivity[]): Promise<GarminMergeStats> {
+  return db.transaction('rw', db.days, async () => {
+    const dates = [...new Set(activities.map((a) => a.date))]
+    const existing = (await db.days.bulkGet(dates)).filter((d) => !!d)
+    const { days, stats } = mergeGarmin(existing, activities, emptyDay)
+    const savedAt = Date.now()
+    await db.days.bulkPut(days.map((d) => ({ ...d, savedAt })))
+    return stats
+  })
 }
 
 async function ensureShoes(names: (string | undefined)[]) {

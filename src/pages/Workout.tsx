@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type ReactNode } from 'react'
-import { shoeTotals } from '../analytics/stats'
+import { fmtTime, shoeTotals } from '../analytics/stats'
 import ShoePicker from '../components/ShoePicker'
 import { addRun, db, setRunShoe, updateShoe, type StoredDay } from '../db/db'
 
@@ -108,6 +108,13 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
                   <span className="font-semibold tabular-nums">{r.date.slice(2).replaceAll('-', '.')}</span>
                   <span className="ml-2 tabular-nums">{km(r.distanceKm)}</span>
                   {(r.event || r.place) && <span className="ml-1 truncate text-xs text-slate-500">· {r.event ?? r.place}</span>}
+                  {r.garmin && (
+                    <div className="text-xs text-slate-500 tabular-nums">
+                      ⌚ {r.garmin.durationSec ? `${fmtTime(r.garmin.durationSec)} · ${fmtTime(Math.round(r.garmin.durationSec / r.garmin.distanceKm))}/km` : `${r.garmin.distanceKm}km`}
+                      {r.garmin.avgHr ? ` · 심박 ${r.garmin.avgHr}` : ''}
+                      {r.garmin.cadence ? ` · ${r.garmin.cadence}spm` : ''}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={() => setEditing(editing === key ? undefined : key)}

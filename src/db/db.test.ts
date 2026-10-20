@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { parseLog } from '../import/parseLog'
-import { addRun, db, saveDays, setRunShoe, updateShoe } from './db'
+import { addRun, db, saveDays, saveGarmin, setRunShoe, updateShoe } from './db'
 
 const log = (body: string) => parseLog(`[ 2026년 ]\n${body}`).days
 
@@ -45,5 +45,17 @@ describe('db', () => {
   it('stores the distance a shoe had before tracking', async () => {
     await updateShoe('디나엘4', { initialKm: 300 })
     expect(await db.shoes.get('디나엘4')).toMatchObject({ initialKm: 300, retired: false })
+  })
+})
+
+describe('garmin', () => {
+  it('keeps watch data when the text log is imported again', async () => {
+    const { parseGarminCsv } = await import('../import/garminCsv')
+    await saveGarmin(parseGarminCsv('Activity Type,Date,Distance,Time,Avg HR\nRunning,2026-06-01 06:00:00,10.05,00:50:00,150\n').activities)
+    // watch-only run first, then the log for the same day arrives
+    await saveDays(log('06.01 : 10키로(공원), 웨이트'))
+    const day = await db.days.get('2026-06-01')
+    expect(day?.activities).toHaveLength(1)
+    expect(day?.activities[0]).toMatchObject({ distanceKm: 10, place: '공원', garmin: { avgHr: 150 }, durationSec: 3000 })
   })
 })

@@ -19,8 +19,10 @@ export interface Activity {
   /** official distance when the logged distance includes warm-up (e.g. half marathon in a 23km day) */
   raceDistanceKm?: number
   shoe?: string
-  /** 'app' when entered in the app rather than read from the text log */
-  source?: 'app'
+  /** where the run came from when not the text log: entered in the app, or a Garmin export */
+  source?: 'app' | 'garmin'
+  /** values recorded by the watch (Garmin Connect export) */
+  garmin?: GarminData
   companions: string[]
   /** training content such as "인터벌", "500*5km, 436*5km" */
   details: string[]
@@ -28,6 +30,19 @@ export interface Activity {
   tags: string[]
   durationSec?: number
   paceSecPerKm?: number
+}
+
+export interface GarminData {
+  /** start time as written in the export, used to recognize the same activity again */
+  startTime: string
+  title?: string
+  distanceKm: number
+  durationSec?: number
+  avgHr?: number
+  maxHr?: number
+  cadence?: number
+  ascentM?: number
+  calories?: number
 }
 
 export interface Metrics {
