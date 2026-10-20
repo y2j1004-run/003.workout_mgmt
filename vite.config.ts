@@ -10,11 +10,18 @@ const base = preview ? './' : process.env.GITHUB_PAGES ? '/003.workout_mgmt/' : 
 
 export default defineConfig({
   base,
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     tailwindcss(),
-    !preview && VitePWA({
-      registerType: 'autoUpdate',
+    VitePWA({
+      // the preview has no service worker, but the register module still resolves (as a no-op)
+      disable: preview,
+      // a new version waits until the user taps "지금 적용" (see UpdateBanner)
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['apple-touch-icon.png'],
       manifest: {
         name: '건강관리 현황',

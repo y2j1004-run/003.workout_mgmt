@@ -8,7 +8,7 @@ const tabs: { id: Tab; icon: string; label: string }[] = [
   { id: 'settings', icon: '⚙️', label: '설정' },
 ]
 
-export default function TabBar({ current, onChange }: { current: Tab; onChange: (tab: Tab) => void }) {
+export default function TabBar({ current, onChange, badge }: { current: Tab; onChange: (tab: Tab) => void; badge?: Tab }) {
   return (
     <nav className="grid grid-cols-5 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
       {tabs.map((t) => (
@@ -19,7 +19,10 @@ export default function TabBar({ current, onChange }: { current: Tab; onChange: 
             current === t.id ? 'font-semibold text-teal-700' : 'text-slate-500'
           }`}
         >
-          <span className="text-xl">{t.icon}</span>
+          <span className="relative text-xl">
+            {t.icon}
+            {badge === t.id && <span className="absolute -top-0.5 -right-1.5 h-2 w-2 rounded-full bg-amber-500" aria-label="확인 필요" />}
+          </span>
           {t.label}
         </button>
       ))}

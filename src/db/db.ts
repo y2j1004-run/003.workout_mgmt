@@ -16,13 +16,20 @@ export interface Shoe {
 }
 
 // All health data lives only in this browser's IndexedDB.
+export interface Meta {
+  key: string
+  value: unknown
+}
+
 export const db = new Dexie('workout-mgmt') as Dexie & {
   days: EntityTable<StoredDay, 'date'>
   shoes: EntityTable<Shoe, 'name'>
+  meta: EntityTable<Meta, 'key'>
 }
 
 db.version(1).stores({ days: 'date' })
 db.version(2).stores({ days: 'date', shoes: 'name' })
+db.version(3).stores({ days: 'date', shoes: 'name', meta: 'key' })
 
 /**
  * Saves days read from the text log. A day that already exists is replaced, but what was
