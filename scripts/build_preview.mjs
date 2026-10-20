@@ -20,7 +20,7 @@ writeFileSync(
   `<title>운동기록 앱 미리보기</title>
 <style>${css}</style>
 <div id="root"></div>
-<script type="module">${js.replaceAll('</script', '<\\/script')}</script>
+<script type="module">${js.replaceAll('</script', '<\\/script').replaceAll('\uFFFD', '\\uFFFD')}</script>
 `,
 )
 console.log(`preview written to ${out}`)
