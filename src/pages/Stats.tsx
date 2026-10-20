@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { ReactNode } from 'react'
-import { crewCounts, fmtTime, metricSeries, monthlyKm, races, shoeTotals, summary } from '../analytics/stats'
+import { bodyFatSeries, crewCounts, fmtTime, metricSeries, monthlyKm, races, shoeTotals, summary } from '../analytics/stats'
 import BarChart from '../components/charts/BarChart'
 import LineChart from '../components/charts/LineChart'
 import { db } from '../db/db'
@@ -11,7 +11,8 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000
 export default function Stats() {
   const days = useLiveQuery(() => db.days.orderBy('date').toArray())
   const shoeList = useLiveQuery(() => db.shoes.toArray())
-  if (!days || !shoeList) return null
+  const inbody = useLiveQuery(() => db.inbody.toArray())
+  if (!days || !shoeList || !inbody) return null
   if (!days.length) {
     return (
       <section>
@@ -26,12 +27,13 @@ export default function Stats() {
 
   const s = summary(days, today())
   const months = monthlyKm(days).slice(-24)
-  const bodyFat = metricSeries(days, 'bodyFatPct')
+  const bodyFat = bodyFatSeries(days, inbody)
   const bp = metricSeries(days, 'systolicBp')
   const shoes = shoeTotals(days, shoeList).filter((sh) => sh.km > 0)
   const raceList = races(days)
   const crews = crewCounts(days)
-  const bfChange = s.lastBodyFat && s.firstBodyFat ? s.lastBodyFat.value - s.firstBodyFat.value : undefined
+  const lastBf = bodyFat.at(-1)
+  const bfChange = lastBf && bodyFat.length > 1 ? lastBf.value - bodyFat[0].value : undefined
 
   return (
     <section className="space-y-4">
@@ -43,7 +45,7 @@ export default function Stats() {
         <Tile label="최근 4주 주평균" value={km(s.weeklyAvgKm4w)} />
         <Tile
           label="체지방률"
-          value={s.lastBodyFat ? `${s.lastBodyFat.value}%` : '-'}
+          value={lastBf ? `${lastBf.value}%` : '-'}
           sub={bfChange != null ? `처음보다 ${bfChange > 0 ? '+' : ''}${bfChange.toFixed(1)}%p` : undefined}
         />
       </div>

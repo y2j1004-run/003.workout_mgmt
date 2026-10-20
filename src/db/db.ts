@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from 'dexie'
 import type { GarminActivity } from '../import/garminCsv'
 import { mergeGarmin, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
 import type { Activity, DayEntry } from '../import/parseLog'
+import { mergeRecord, type InBodyRecord } from '../inbody/inbody'
 
 export interface StoredDay extends DayEntry {
   savedAt: number
@@ -25,11 +26,28 @@ export const db = new Dexie('workout-mgmt') as Dexie & {
   days: EntityTable<StoredDay, 'date'>
   shoes: EntityTable<Shoe, 'name'>
   meta: EntityTable<Meta, 'key'>
+  inbody: EntityTable<InBodyRecord, 'date'>
 }
 
 db.version(1).stores({ days: 'date' })
 db.version(2).stores({ days: 'date', shoes: 'name' })
 db.version(3).stores({ days: 'date', shoes: 'name', meta: 'key' })
+db.version(4).stores({ days: 'date', shoes: 'name', meta: 'key', inbody: 'date' })
+
+/** Saves InBody measurements, combining with what is stored for the same date. */
+export async function saveInBody(records: InBodyRecord[]): Promise<{ added: number; updated: number }> {
+  return db.transaction('rw', db.inbody, async () => {
+    let added = 0
+    let updated = 0
+    for (const r of records) {
+      const existing = await db.inbody.get(r.date)
+      await db.inbody.put(mergeRecord(existing, r))
+      if (existing) updated++
+      else added++
+    }
+    return { added, updated }
+  })
+}
 
 /**
  * Saves days read from the text log. A day that already exists is replaced, but what was

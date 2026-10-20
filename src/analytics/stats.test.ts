@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseLog } from '../import/parseLog'
-import { crewCounts, metricSeries, monthlyKm, races, shoeTotals, summary } from './stats'
+import { bodyFatSeries, crewCounts, metricSeries, monthlyKm, races, shoeTotals, summary } from './stats'
 
 const { days } = parseLog(`[ 2026년 ]
 01.30 : 8키로, 체지방률 15.0, 혈압 110
@@ -52,6 +52,20 @@ describe('shoeTotals with shoe list', () => {
       ['레벨5', 122, 2, false],
       ['새신발', 0, 0, false],
       ['옛신발', 800, 0, true],
+    ])
+  })
+})
+
+describe('bodyFatSeries', () => {
+  it('combines the log with InBody records, InBody winning on the same date', () => {
+    const inbody = [
+      { date: '2026-03-20', bodyFatPct: 13.9 },
+      { date: '2026-03-27', bodyFatPct: 13.5 },
+    ]
+    expect(bodyFatSeries(days, inbody).map((p) => [p.date, p.value])).toEqual([
+      ['2026-01-30', 15],
+      ['2026-03-20', 13.9],
+      ['2026-03-27', 13.5],
     ])
   })
 })
