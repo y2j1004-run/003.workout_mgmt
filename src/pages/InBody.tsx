@@ -3,16 +3,19 @@ import { useState, type ReactNode } from 'react'
 import LineChart from '../components/charts/LineChart'
 import InBodyLevel from '../components/InBodyLevel'
 import { db, saveInBody } from '../db/db'
-import { checkRecord, parseInBodyCsv, type InBodyRecord } from '../inbody/inbody'
+import { checkRecord, parseInBodyCsv, withLogRecords, type InBodyRecord } from '../inbody/inbody'
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
-const SOURCE_LABEL = { sheet: '결과지', history: '결과지 추이', manual: '직접 입력' } as const
+const SOURCE_LABEL = { sheet: '결과지', history: '결과지 추이', manual: '직접 입력', log: '운동 기록' } as const
 
 export default function InBody() {
   const records = useLiveQuery(() => db.inbody.orderBy('date').toArray())
-  if (!records) return null
+  const days = useLiveQuery(() => db.days.toArray())
+  if (!records || !days) return null
   const latest = records.at(-1)
-  const series = (key: keyof InBodyRecord) => records.filter((r) => typeof r[key] === 'number').map((r) => ({ date: r.date, value: r[key] as number }))
+  // charts and the history list also show what the workout log recorded
+  const all = withLogRecords(records, days)
+  const series = (key: keyof InBodyRecord) => all.filter((r) => typeof r[key] === 'number').map((r) => ({ date: r.date, value: r[key] as number }))
   const charts = [
     { title: '체중 (kg)', data: series('weightKg'), unit: 'kg' },
     { title: '골격근량 (kg)', data: series('skeletalMuscleKg'), unit: 'kg' },
@@ -29,7 +32,7 @@ export default function InBody() {
         </>
       ) : (
         <Card title="아직 인바디 기록이 없습니다">
-          <p className="text-sm text-slate-500">아래에서 측정값을 직접 입력하거나, 결과지를 읽은 값을 붙여넣어 가져오세요.</p>
+          <p className="text-sm text-slate-500">{all.length > 0 && '운동 기록의 체지방률·혈압은 아래 측정 기록에 보입니다. '}아래에서 측정값을 직접 입력하거나, 결과지를 읽은 값을 붙여넣어 가져오세요.</p>
         </Card>
       )}
       {charts.map(
@@ -42,7 +45,7 @@ export default function InBody() {
       )}
       <ManualEntry />
       <PasteImport />
-      {records.length > 0 && <History records={records} />}
+      {all.length > 0 && <History records={all} />}
     </section>
   )
 }
@@ -214,6 +217,8 @@ function PasteImport() {
   )
 }
 
+const HISTORY_TAG = { history: '추이', manual: '입력', log: '기록' } as const
+
 function History({ records }: { records: InBodyRecord[] }) {
   const [limit, setLimit] = useState(10)
   const rows = [...records].reverse()
@@ -226,6 +231,7 @@ function History({ records }: { records: InBodyRecord[] }) {
             <th className="text-right font-normal">체중</th>
             <th className="text-right font-normal">골격근</th>
             <th className="text-right font-normal">체지방률</th>
+            <th className="text-right font-normal">혈압</th>
           </tr>
         </thead>
         <tbody>
@@ -233,11 +239,12 @@ function History({ records }: { records: InBodyRecord[] }) {
             <tr key={r.date} className="border-t border-slate-100">
               <td className="py-1.5">
                 {r.date.slice(2).replaceAll('-', '.')}
-                {r.source !== 'sheet' && <span className="ml-1 text-xs text-slate-400">{r.source === 'history' ? '추이' : '입력'}</span>}
+                {r.source !== 'sheet' && <span className="ml-1 text-xs text-slate-400">{HISTORY_TAG[r.source]}</span>}
               </td>
               <td className="text-right">{r.weightKg ?? '-'}</td>
               <td className="text-right">{r.skeletalMuscleKg ?? '-'}</td>
               <td className="text-right">{r.bodyFatPct ?? '-'}</td>
+              <td className="text-right">{r.systolicBp ?? '-'}</td>
             </tr>
           ))}
         </tbody>
