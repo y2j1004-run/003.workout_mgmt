@@ -19,7 +19,18 @@ export interface InBodyRecord {
   systolicBp?: number
   diastolicBp?: number
   pulse?: number
+  /** skeletal muscle index, kg/m² */
+  smi?: number
+  /** whole-body phase angle at 50kHz, degrees */
+  phaseAngle?: number
+  /** waist-hip ratio (복부지방률) */
+  abdominalFatRatio?: number
+  /** segmental lean mass: kg and % of the standard for the body weight */
+  segments?: Partial<Record<Segment, { kg: number; pct?: number }>>
 }
+
+export type Segment = 'rightArm' | 'leftArm' | 'trunk' | 'rightLeg' | 'leftLeg'
+export const SEGMENTS: Segment[] = ['rightArm', 'leftArm', 'trunk', 'rightLeg', 'leftLeg']
 
 // A full sheet beats a typed entry, which beats the short history strip.
 const RANK: Record<InBodySource, number> = { history: 1, manual: 2, sheet: 3 }
@@ -36,9 +47,13 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 }
 
-// Paste format (one measurement per line, header optional):
-// date,time,source,weight,smm,fatKg,pbf,bmi,score,vfa,bmr,ecw,sys,dia,pulse
-export const CSV_COLUMNS = ['date', 'time', 'source', 'weight', 'smm', 'fatKg', 'pbf', 'bmi', 'score', 'vfa', 'bmr', 'ecw', 'sys', 'dia', 'pulse'] as const
+// Paste format (one measurement per line, header optional; trailing columns may be left out):
+// date,time,source,weight,smm,fatKg,pbf,bmi,score,vfa,bmr,ecw,sys,dia,pulse,
+// smi,phase,whr,ra,la,tr,rl,ll,raPct,laPct,trPct,rlPct,llPct
+export const CSV_COLUMNS = [
+  'date', 'time', 'source', 'weight', 'smm', 'fatKg', 'pbf', 'bmi', 'score', 'vfa', 'bmr', 'ecw', 'sys', 'dia', 'pulse',
+  'smi', 'phase', 'whr', 'ra', 'la', 'tr', 'rl', 'll', 'raPct', 'laPct', 'trPct', 'rlPct', 'llPct',
+] as const
 
 export function parseInBodyCsv(text: string): { records: InBodyRecord[]; errors: string[] } {
   const records: InBodyRecord[] = []
@@ -70,12 +85,26 @@ export function parseInBodyCsv(text: string): { records: InBodyRecord[]; errors:
       systolicBp: n(12),
       diastolicBp: n(13),
       pulse: n(14),
+      smi: n(15),
+      phaseAngle: n(16),
+      abdominalFatRatio: n(17),
+      segments: segmentsFrom(SEGMENTS.map((_, j) => n(18 + j)), SEGMENTS.map((_, j) => n(23 + j))),
     }
-    const bad = Object.entries(rec).find(([, v]) => typeof v === 'number' && Number.isNaN(v))
+    const numbers = [...Object.values(rec), ...Object.values(rec.segments ?? {}).flatMap((x) => [x?.kg, x?.pct])]
+    const bad = numbers.some((v) => typeof v === 'number' && Number.isNaN(v))
     if (bad) errors.push(`${i + 1}번째 줄: 숫자가 아닌 값이 있습니다`)
     else records.push(rec)
   }
   return { records, errors }
+}
+
+function segmentsFrom(kg: (number | undefined)[], pct: (number | undefined)[]): InBodyRecord['segments'] {
+  if (kg.every((k) => k === undefined)) return undefined
+  const out: NonNullable<InBodyRecord['segments']> = {}
+  SEGMENTS.forEach((s, i) => {
+    if (kg[i] !== undefined) out[s] = { kg: kg[i]!, pct: pct[i] }
+  })
+  return out
 }
 
 /** Warnings for values that are probably misread: fat kg and fat % should agree with weight. */

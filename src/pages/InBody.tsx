@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type ReactNode } from 'react'
 import LineChart from '../components/charts/LineChart'
+import InBodyLevel from '../components/InBodyLevel'
 import { db, saveInBody } from '../db/db'
 import { checkRecord, parseInBodyCsv, type InBodyRecord } from '../inbody/inbody'
 
@@ -22,7 +23,10 @@ export default function InBody() {
     <section className="space-y-4">
       <h1 className="text-2xl font-bold">인바디</h1>
       {latest ? (
-        <Latest latest={latest} prev={records.at(-2)} />
+        <>
+          <Latest latest={latest} prev={records.at(-2)} />
+          <InBodyLevel records={records} />
+        </>
       ) : (
         <Card title="아직 인바디 기록이 없습니다">
           <p className="text-sm text-slate-500">아래에서 측정값을 직접 입력하거나, 결과지를 읽은 값을 붙여넣어 가져오세요.</p>
