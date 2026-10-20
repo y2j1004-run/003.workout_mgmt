@@ -75,11 +75,37 @@ export function shoeTotals(days: DayEntry[], shoes: { name: string; initialKm: n
 
 const RACE_RE = /마라톤|레이스|대회|서킷런/
 
-/** Races: events that look official, excluding crew runs. */
-export function races(days: DayEntry[]): DatedActivity[] {
-  return runsOf(days)
-    .filter((r) => r.event && RACE_RE.test(r.event) && !r.crew && !/워밍업/.test(r.event))
+/** A run is a race when the user said so; otherwise when its event looks official (not a crew run or a warm-up). */
+export function isRace(a: Activity): boolean {
+  return a.race ?? (!!a.event && RACE_RE.test(a.event) && !a.crew && !/워밍업/.test(a.event))
+}
+
+export interface RaceRow extends DatedActivity {
+  /** position of the run within its day, used to edit it */
+  index: number
+}
+
+export function races(days: DayEntry[]): RaceRow[] {
+  return days
+    .flatMap((d) => d.activities.map((a, index) => ({ ...a, date: d.date, index })))
+    .filter((a) => a.kind === 'run' && isRace(a))
     .sort((a, b) => b.date.localeCompare(a.date))
+}
+
+export const RACE_DISTANCES = [
+  { label: '5K', km: 5 },
+  { label: '10K', km: 10 },
+  { label: '하프', km: 21.0975 },
+  { label: '풀', km: 42.195 },
+]
+
+/** Fastest finish per standard distance (within 1% of it). */
+export function personalBests(list: RaceRow[]): { label: string; race: RaceRow }[] {
+  return RACE_DISTANCES.flatMap(({ label, km }) => {
+    const timed = list.filter((r) => r.durationSec && Math.abs((r.raceDistanceKm ?? r.distanceKm) - km) <= km * 0.01)
+    const best = timed.sort((a, b) => a.durationSec! - b.durationSec!)[0]
+    return best ? [{ label, race: best }] : []
+  })
 }
 
 export function crewCounts(days: DayEntry[]): { crew: string; runs: number; km: number }[] {

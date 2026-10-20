@@ -1,7 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { GarminActivity } from '../import/garminCsv'
 import { mergeGarmin, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
-import type { Activity, DayEntry } from '../import/parseLog'
+import type { Activity, DayEntry, RaceEdits } from '../import/parseLog'
 import { mergeRecord, type InBodyRecord } from '../inbody/inbody'
 
 export interface StoredDay extends DayEntry {
@@ -72,7 +72,8 @@ function mergeAppEdits(next: DayEntry, prev?: DayEntry): DayEntry {
   const activities: Activity[] = next.activities.map((a, i) => {
     const before = fromLog[i]
     if (!before || !sameRun(before.distanceKm, a.distanceKm)) return a
-    return { ...a, shoe: a.shoe ?? before.shoe, garmin: before.garmin, durationSec: a.durationSec ?? before.durationSec, paceSecPerKm: a.paceSecPerKm ?? before.paceSecPerKm }
+    const carried = { ...a, shoe: a.shoe ?? before.shoe, garmin: before.garmin, durationSec: a.durationSec ?? before.durationSec, paceSecPerKm: a.paceSecPerKm ?? before.paceSecPerKm }
+    return before.appEdits ? applyRaceEdits(carried, before.appEdits) : carried
   })
   for (const extra of prev.activities.filter((p) => p.source)) {
     // a watch run that now also appears in the log joins that run instead of being counted twice
@@ -81,6 +82,39 @@ function mergeAppEdits(next: DayEntry, prev?: DayEntry): DayEntry {
     else activities.push(extra)
   }
   return { ...next, activities }
+}
+
+/** Applies race corrections and recomputes pace from the race distance. */
+export function applyRaceEdits(a: Activity, edits: RaceEdits): Activity {
+  const next: Activity = { ...a, appEdits: { ...a.appEdits, ...edits } }
+  if (edits.race !== undefined) next.race = edits.race
+  if (edits.event !== undefined) next.event = edits.event || undefined
+  if (edits.raceDistanceKm !== undefined) next.raceDistanceKm = edits.raceDistanceKm ?? undefined
+  if (edits.durationSec !== undefined) next.durationSec = edits.durationSec ?? undefined
+  if (next.durationSec) next.paceSecPerKm = Math.round(next.durationSec / (next.raceDistanceKm ?? next.distanceKm))
+  else if (edits.durationSec === null) next.paceSecPerKm = undefined
+  // otherwise keep a pace written in the log ("평페 434")
+  return next
+}
+
+/** Corrects the race fields of the index-th activity of a day (or marks it as a race / not a race). */
+export async function editRace(date: string, index: number, edits: RaceEdits) {
+  await db.transaction('rw', db.days, async () => {
+    const day = await db.days.get(date)
+    if (!day?.activities[index]) return
+    const activities = day.activities.map((a, i) => (i === index ? applyRaceEdits(a, edits) : a))
+    await db.days.put({ ...day, activities, savedAt: Date.now() })
+  })
+}
+
+/** Adds a race that is not in the log as a run of its own. */
+export async function addRace(date: string, event: string, distanceKm: number, durationSec?: number) {
+  await db.transaction('rw', db.days, async () => {
+    const day = (await db.days.get(date)) ?? emptyDay(date)
+    const base: Activity = { kind: 'run', distanceKm, source: 'app', companions: [], details: [], tags: [] }
+    const run = applyRaceEdits(base, { race: true, event, durationSec: durationSec ?? null })
+    await db.days.put({ ...day, activities: [...day.activities, run], savedAt: Date.now() })
+  })
 }
 
 /** Merges a Garmin Connect export into the stored days. */
