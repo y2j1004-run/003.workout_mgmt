@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState, type ReactNode } from 'react'
 import { goalProgress, runStreak, weekSummary, type GoalProgress } from '../analytics/home'
-import { bodyFatSeries, runsOf } from '../analytics/stats'
+import { addDays, bodyFatSeries, runsOf } from '../analytics/stats'
 import { db } from '../db/db'
 import {
   categoryIcon,
@@ -175,18 +175,32 @@ function GoalsSummary({ progress, custom, now }: { progress: GoalProgress[]; cus
               {habits.map((g) => {
                 const weekly = repeatOf(g) === 'weekly'
                 const streak = habitStreak(g, now)
-                return (
+                const title = (
+                  <span className="min-w-0">
+                    {categoryIcon(g.category)} {g.title}
+                  </span>
+                )
+                const counts = (
+                  <span className="shrink-0 text-xs text-slate-500 tabular-nums">
+                    {weekly ? '이번 주' : `이번 주 ${daysThisWeek(g, now)}/7일`}
+                    {streak >= 2 && <span className="ml-1 text-amber-700">🔥{streak}{weekly ? '주' : '일'}</span>}
+                  </span>
+                )
+                return weekly ? (
                   <li key={g.id} className="flex items-center justify-between gap-2 text-sm">
                     <label className="flex min-w-0 items-center gap-2 font-semibold">
                       <input type="checkbox" checked={checkedNow(g, now)} onChange={() => toggleHabit(g.id, now)} className="h-5 w-5 shrink-0 accent-teal-700" />
-                      <span className="min-w-0">
-                        {categoryIcon(g.category)} {g.title}
-                      </span>
+                      {title}
                     </label>
-                    <span className="shrink-0 text-xs text-slate-500 tabular-nums">
-                      {weekly ? '이번 주' : `${daysThisWeek(g, now)}/7일`}
-                      {streak >= 2 && <span className="ml-1 text-amber-700">🔥{streak}{weekly ? '주' : '일'}</span>}
-                    </span>
+                    {counts}
+                  </li>
+                ) : (
+                  <li key={g.id} className="text-sm">
+                    <div className="flex items-center justify-between gap-2 font-semibold">
+                      {title}
+                      {counts}
+                    </div>
+                    <HabitDays goal={g} today={now} />
                   </li>
                 )
               })}
@@ -226,6 +240,33 @@ function GoalsSummary({ progress, custom, now }: { progress: GoalProgress[]; cus
         <p className="text-sm text-slate-500">⚙️ 설정 → 목표 설정에서 주간 거리나 목표 체지방률을 정하거나, 나만의 목표를 추가하면 여기에 나옵니다.</p>
       )}
     </Card>
+  )
+}
+
+/** The last seven days of a daily habit; any of them can be checked or unchecked, so a missed day can be filled in later. */
+function HabitDays({ goal: g, today }: { goal: CustomGoal; today: string }) {
+  const checks = new Set(g.checks ?? [])
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(today, i - 6))
+  return (
+    <div className="mt-1.5 grid grid-cols-7 gap-1" role="group" aria-label={`${g.title} 최근 7일`}>
+      {dates.map((d) => {
+        const on = checks.has(d)
+        const isToday = d === today
+        const dow = WEEKDAYS[(new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7]
+        return (
+          <button
+            key={d}
+            onClick={() => toggleHabit(g.id, d)}
+            aria-pressed={on}
+            aria-label={`${d} ${on ? '완료' : '미완료'}`}
+            className={`flex flex-col items-center rounded-lg py-1 text-[11px] leading-tight ${on ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-500'} ${isToday ? 'ring-2 ring-teal-700 ring-offset-1' : ''}`}
+          >
+            <span className={isToday ? 'font-bold' : ''}>{isToday ? '오늘' : dow}</span>
+            <span className="tabular-nums">{on ? '✓' : Number(d.slice(8))}</span>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
