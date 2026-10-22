@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { ageOn, INTENSITY_LABEL, intensityOf, maxHeartRate, zoneOf } from '../analytics/fitness'
 import { fmtTime, runsOf, shoeTotals } from '../analytics/stats'
 import { INTENSITY_CHIP } from '../components/FitnessCards'
+import MemoInput, { MemoLine } from '../components/MemoInput'
 import ShoePicker from '../components/ShoePicker'
 import ThemePicker from '../components/ThemePicker'
 import { StrengthForm, WorkoutForm, WorkoutHistory } from '../components/WorkoutForms'
@@ -10,7 +11,7 @@ import { WORKOUT_TYPES } from '../analytics/workouts'
 import { themeOf } from '../analytics/themes'
 import { addRun, db, deleteRun, editRun, setRunShoe, updateShoe, type StoredDay } from '../db/db'
 import { getProfile } from '../db/profile'
-import type { Activity } from '../import/parseLog'
+import type { Activity, Feeling } from '../import/parseLog'
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
@@ -91,16 +92,20 @@ function RunForm({ shoes, places }: { shoes: string[]; places: string[] }) {
   const [shoe, setShoe] = useState<string | undefined>(shoes[0])
   const [theme, setTheme] = useState<string>()
   const [place, setPlace] = useState('')
+  const [memo, setMemo] = useState('')
+  const [feeling, setFeeling] = useState<Feeling>()
   const [msg, setMsg] = useState('')
   const valid = Number(distance) > 0
 
   const save = async () => {
     if (!valid) return
-    await addRun(date, Number(distance), shoe, theme, place)
+    await addRun(date, Number(distance), { shoe, theme, place, memo, feeling })
     setMsg(`${date.slice(5).replace('-', '.')} 러닝 ${km(Number(distance))}${place.trim() ? ` · ${place.trim()}` : ''}${theme ? ` · ${theme}` : ''}${shoe ? ` · ${shoe}` : ''} 저장했습니다.`)
     setDistance('')
     setTheme(undefined)
     setPlace('')
+    setMemo('')
+    setFeeling(undefined)
   }
 
   return (
@@ -158,6 +163,9 @@ function RunForm({ shoes, places }: { shoes: string[]; places: string[] }) {
       <ThemePicker key={msg} id="run-theme" value={theme} onPick={setTheme} />
       <p className="mt-3 mb-1 text-xs text-slate-500">신발</p>
       <ShoePicker id="run-shoe" options={shoes} value={shoe} onPick={setShoe} allowNone />
+      <div className="mt-3">
+        <MemoInput id="run-memo" memo={memo} feeling={feeling} onMemo={setMemo} onFeeling={setFeeling} />
+      </div>
       <button onClick={save} disabled={!valid} className="mt-4 w-full rounded-lg bg-teal-700 py-2.5 font-semibold text-white disabled:opacity-40">
         저장
       </button>
@@ -223,6 +231,7 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
                       })()}
                     </div>
                   )}
+                  <MemoLine memo={r.memo} feeling={r.feeling} />
                 </button>
                 <button
                   onClick={() => setEditing(editing === key ? undefined : key)}
@@ -269,6 +278,8 @@ function RunEditor({ run, onDone }: { run: Activity & { date: string; index: num
     const t = run.durationSec ?? 0
     return t ? { h: String(Math.floor(t / 3600)), m: String(Math.floor((t % 3600) / 60)), s: String(t % 60) } : { h: '', m: '', s: '' }
   })
+  const [memo, setMemo] = useState(run.memo ?? '')
+  const [feeling, setFeeling] = useState<Feeling | undefined>(run.feeling)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const key = `${run.date}-${run.index}`
   const valid = Number(distance) > 0 && !!date
@@ -323,11 +334,12 @@ function RunEditor({ run, onDone }: { run: Activity & { date: string; index: num
           ))}
         </div>
       </div>
+      <MemoInput id={`run-memo-${key}`} memo={memo} feeling={feeling} onMemo={setMemo} onFeeling={setFeeling} />
       <div className="flex gap-2">
         <button
           disabled={!valid}
           onClick={async () => {
-            await editRun(run.date, run.index, { date, distanceKm: Number(distance), place: place.trim() || undefined, theme, durationSec: seconds || undefined })
+            await editRun(run.date, run.index, { date, distanceKm: Number(distance), place: place.trim() || undefined, theme, durationSec: seconds || undefined, memo, feeling })
             onDone()
           }}
           className="flex-1 rounded-lg bg-teal-700 py-2 font-semibold text-white disabled:opacity-40"

@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react'
-import { isOfType, STRENGTH_EXERCISES, workoutsOf, type WorkoutType } from '../analytics/workouts'
-import { addWorkout, deleteRun, type StoredDay } from '../db/db'
+import { isOfType, STRENGTH_EXERCISES, workoutsOf, type DatedWorkout, type WorkoutType } from '../analytics/workouts'
+import { addWorkout, deleteRun, setMemo, type StoredDay } from '../db/db'
+import type { Feeling } from '../import/parseLog'
+import MemoInput, { MemoLine } from './MemoInput'
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 const input = 'mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-base text-slate-900'
@@ -14,6 +16,8 @@ export function WorkoutForm({ type, days }: { type: WorkoutType; days: StoredDay
   const [distance, setDistance] = useState('')
   const [minutes, setMinutes] = useState('')
   const [place, setPlace] = useState('')
+  const [memo, setMemo] = useState('')
+  const [feeling, setFeeling] = useState<Feeling>()
   const [msg, setMsg] = useState('')
   const places = [...new Set(workoutsOf(days, type).map((w) => w.place).filter((p): p is string => !!p))].slice(0, 6)
   const km = Number(distance)
@@ -28,12 +32,16 @@ export function WorkoutForm({ type, days }: { type: WorkoutType; days: StoredDay
       durationSec: min > 0 ? Math.round(min * 60) : undefined,
       place,
       sport: type.kind === 'sport' ? name : undefined,
+      memo,
+      feeling,
     })
     const parts = [type.distance && km > 0 && `${km}km`, min > 0 && `${min}분`, place.trim()].filter(Boolean)
     setMsg(`${date.slice(5).replace('-', '.')} ${name}${parts.length ? ` · ${parts.join(' · ')}` : ''} 저장했습니다.`)
     setDistance('')
     setMinutes('')
     setPlace('')
+    setMemo('')
+    setFeeling(undefined)
   }
 
   return (
@@ -77,6 +85,9 @@ export function WorkoutForm({ type, days }: { type: WorkoutType; days: StoredDay
           )}
         </>
       )}
+      <div className="mt-3">
+        <MemoInput id="workout-memo" memo={memo} feeling={feeling} onMemo={setMemo} onFeeling={setFeeling} />
+      </div>
       <button onClick={save} disabled={!valid} className="mt-4 w-full rounded-lg bg-teal-700 py-2.5 font-semibold text-white disabled:opacity-40">
         저장
       </button>
@@ -91,6 +102,8 @@ export function StrengthForm({ days }: { days: StoredDay[] }) {
   const [picked, setPicked] = useState<string[]>([])
   const [custom, setCustom] = useState('')
   const [minutes, setMinutes] = useState('')
+  const [memo, setMemo] = useState('')
+  const [feeling, setFeeling] = useState<Feeling>()
   const [msg, setMsg] = useState('')
   // exercises typed before show up as chips too
   const typed = days.flatMap((d) => d.activities.flatMap((a) => (a.kind === 'strength' && !a.deleted ? (a.exercises ?? []) : [])))
@@ -132,12 +145,17 @@ export function StrengthForm({ days }: { days: StoredDay[] }) {
           className="w-28 rounded-full border border-slate-300 px-3 py-1 text-xs"
         />
       </div>
+      <div className="mt-3">
+        <MemoInput id="strength-memo" memo={memo} feeling={feeling} onMemo={setMemo} onFeeling={setFeeling} />
+      </div>
       <button
         onClick={async () => {
-          await addWorkout(date, { kind: 'strength', exercises: picked, durationSec: min > 0 ? Math.round(min * 60) : undefined })
+          await addWorkout(date, { kind: 'strength', exercises: picked, durationSec: min > 0 ? Math.round(min * 60) : undefined, memo, feeling })
           setMsg(`${date.slice(5).replace('-', '.')} 웨이트${picked.length ? ` · ${picked.join(', ')}` : ''} 저장했습니다.`)
           setPicked([])
           setMinutes('')
+          setMemo('')
+          setFeeling(undefined)
         }}
         disabled={!picked.length || (!!minutes.trim() && !(min > 0))}
         className="mt-4 w-full rounded-lg bg-teal-700 py-2.5 font-semibold text-white disabled:opacity-40"
@@ -152,7 +170,8 @@ export function StrengthForm({ days }: { days: StoredDay[] }) {
 /** Recent entries of one menu entry; app entries can be deleted. For strength, log days without details are listed too. */
 export function WorkoutHistory({ type, days }: { type: WorkoutType; days: StoredDay[] }) {
   const [limit, setLimit] = useState(10)
-  const items: { key: string; date: string; text: string; sub?: string; del?: () => void }[] = workoutsOf(days, type).map((w) => ({
+  const [editing, setEditing] = useState<string>()
+  const items: { key: string; date: string; text: string; sub?: string; act?: DatedWorkout }[] = workoutsOf(days, type).map((w) => ({
     key: `${w.date}#${w.index}`,
     date: w.date,
     text: [
@@ -164,7 +183,7 @@ export function WorkoutHistory({ type, days }: { type: WorkoutType; days: Stored
       .filter(Boolean)
       .join(' · '),
     sub: w.place,
-    del: w.source === 'app' ? () => deleteRun(w.date, w.index) : undefined,
+    act: w,
   }))
   if (type.kind === 'strength') {
     for (const d of days) {
@@ -180,17 +199,28 @@ export function WorkoutHistory({ type, days }: { type: WorkoutType; days: Stored
     <Card title={`최근 ${type.custom ? '기타 운동' : type.label}`}>
       <ul className="divide-y divide-slate-100 text-sm">
         {items.slice(0, limit).map((i) => (
-          <li key={i.key} className="flex items-center justify-between gap-2 py-1.5">
-            <span className="min-w-0">
-              <span className="font-semibold tabular-nums">{i.date.slice(2).replaceAll('-', '.')}</span>
-              <span className="ml-2">{i.text}</span>
-              {i.sub && <span className="ml-1 text-xs text-slate-500">· {i.sub}</span>}
-            </span>
-            {i.del && (
-              <button onClick={() => confirm(`${i.date} 기록을 지울까요?`) && i.del!()} className="shrink-0 px-2 text-xs text-slate-400">
-                삭제
-              </button>
-            )}
+          <li key={i.key} className="py-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0">
+                <span className="font-semibold tabular-nums">{i.date.slice(2).replaceAll('-', '.')}</span>
+                <span className="ml-2">{i.text}</span>
+                {i.sub && <span className="ml-1 text-xs text-slate-500">· {i.sub}</span>}
+              </span>
+              {i.act && (
+                <span className="flex shrink-0 gap-1">
+                  <button onClick={() => setEditing(editing === i.key ? undefined : i.key)} className="px-1 text-xs text-teal-700">
+                    소감
+                  </button>
+                  {i.act.source === 'app' && (
+                    <button onClick={() => confirm(`${i.date} 기록을 지울까요?`) && deleteRun(i.act!.date, i.act!.index)} className="px-1 text-xs text-slate-400">
+                      삭제
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
+            {i.act && editing !== i.key && <MemoLine memo={i.act.memo} feeling={i.act.feeling} />}
+            {i.act && editing === i.key && <MemoEditor act={i.act} onDone={() => setEditing(undefined)} />}
           </li>
         ))}
       </ul>
@@ -200,6 +230,30 @@ export function WorkoutHistory({ type, days }: { type: WorkoutType; days: Stored
         </button>
       )}
     </Card>
+  )
+}
+
+function MemoEditor({ act, onDone }: { act: DatedWorkout; onDone: () => void }) {
+  const [memo, setMemoText] = useState(act.memo ?? '')
+  const [feeling, setFeeling] = useState<Feeling | undefined>(act.feeling)
+  return (
+    <div className="mt-2 rounded-lg bg-slate-50 p-3">
+      <MemoInput id={`memo-${act.date}-${act.index}`} memo={memo} feeling={feeling} onMemo={setMemoText} onFeeling={setFeeling} />
+      <div className="mt-2 flex gap-2">
+        <button
+          onClick={async () => {
+            await setMemo(act.date, act.index, memo, feeling)
+            onDone()
+          }}
+          className="flex-1 rounded-lg bg-teal-700 py-2 font-semibold text-white"
+        >
+          저장
+        </button>
+        <button onClick={onDone} className="rounded-lg bg-slate-200 px-4 py-2">
+          취소
+        </button>
+      </div>
+    </div>
   )
 }
 

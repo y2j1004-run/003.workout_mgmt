@@ -17,6 +17,10 @@ export interface Activity {
   sport?: string
   /** for kind 'strength': exercises done ("스쿼트", "랫풀다운", ...) */
   exercises?: string[]
+  /** a few words written after the workout */
+  memo?: string
+  /** how it felt */
+  feeling?: Feeling
   place?: string
   /** race or group run: "경기마라톤", "가우스 달벙" */
   event?: string
@@ -46,6 +50,9 @@ export interface Activity {
   paceSecPerKm?: number
 }
 
+/** how a workout felt, picked after it */
+export type Feeling = 'good' | 'ok' | 'hard'
+
 export interface RaceEdits {
   distanceKm?: number
   /** the distance the log had before the user changed it, used to recognize the run on re-import */
@@ -58,6 +65,8 @@ export interface RaceEdits {
   /** null clears the value */
   raceDistanceKm?: number | null
   durationSec?: number | null
+  memo?: string | null
+  feeling?: Feeling | null
 }
 
 export interface GarminData {

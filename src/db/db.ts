@@ -1,7 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { GarminActivity } from '../import/garminCsv'
 import { applyGarmin, mergeGarmin, pairByDistance, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
-import type { Activity, DayEntry, RaceEdits } from '../import/parseLog'
+import type { Activity, DayEntry, Feeling, RaceEdits } from '../import/parseLog'
 import { mergeRecord, type InBodyRecord } from '../inbody/inbody'
 
 export interface StoredDay extends DayEntry {
@@ -109,6 +109,8 @@ export function applyRaceEdits(a: Activity, edits: RaceEdits): Activity {
   if (edits.event !== undefined) next.event = edits.event || undefined
   if (edits.raceDistanceKm !== undefined) next.raceDistanceKm = edits.raceDistanceKm ?? undefined
   if (edits.durationSec !== undefined) next.durationSec = edits.durationSec ?? undefined
+  if (edits.memo !== undefined) next.memo = edits.memo || undefined
+  if (edits.feeling !== undefined) next.feeling = edits.feeling ?? undefined
   if (next.durationSec && (edits.durationSec !== undefined || edits.distanceKm !== undefined || edits.raceDistanceKm !== undefined)) next.paceSecPerKm = Math.round(next.durationSec / (next.raceDistanceKm ?? next.distanceKm))
   else if (edits.durationSec === null) next.paceSecPerKm = undefined
   // otherwise keep a pace written in the log ("평페 434")
@@ -131,6 +133,8 @@ export interface RunChanges {
   place?: string
   theme?: string
   durationSec?: number
+  memo?: string
+  feeling?: Feeling
 }
 
 /**
@@ -142,7 +146,14 @@ export async function editRun(date: string, index: number, c: RunChanges) {
     const day = await db.days.get(date)
     const run = day?.activities[index]
     if (!day || !run) return
-    const edits: RaceEdits = { distanceKm: c.distanceKm, place: c.place ?? null, theme: c.theme ?? null, durationSec: c.durationSec ?? null }
+    const edits: RaceEdits = {
+      distanceKm: c.distanceKm,
+      place: c.place ?? null,
+      theme: c.theme ?? null,
+      durationSec: c.durationSec ?? null,
+      memo: c.memo?.trim() || null,
+      feeling: c.feeling ?? null,
+    }
     if (c.date === date) {
       const activities = day.activities.map((a, i) => (i === index ? applyRaceEdits(a, edits) : a))
       await db.days.put({ ...day, activities, savedAt: Date.now() })
@@ -201,17 +212,41 @@ async function ensureShoes(names: (string | undefined)[]) {
 const newShoe = (name: string): Shoe => ({ name, initialKm: 0, retired: false, createdAt: Date.now() })
 
 /** Adds a run entered in the app to the day (creating the day if needed). */
-export async function addRun(date: string, distanceKm: number, shoe?: string, theme?: string, place?: string) {
+export interface NewRun {
+  shoe?: string
+  theme?: string
+  place?: string
+  memo?: string
+  feeling?: Feeling
+}
+
+export async function addRun(date: string, distanceKm: number, r: NewRun = {}) {
+  const { shoe, theme, feeling } = r
   await db.transaction('rw', db.days, db.shoes, async () => {
     const day = (await db.days.get(date)) ?? emptyDay(date)
-    const run: Activity = { kind: 'run', distanceKm, shoe, theme, place: place?.trim() || undefined, source: 'app', companions: [], details: [], tags: [] }
+    const run: Activity = {
+      kind: 'run',
+      distanceKm,
+      shoe,
+      theme,
+      place: r.place?.trim() || undefined,
+      memo: r.memo?.trim() || undefined,
+      feeling,
+      source: 'app',
+      companions: [],
+      details: [],
+      tags: [],
+    }
     await db.days.put({ ...day, activities: [...day.activities, run], savedAt: Date.now() })
     await ensureShoes([shoe])
   })
 }
 
 /** Adds a workout other than a run (walk, hike, strength, ball sport) entered in the app. */
-export async function addWorkout(date: string, w: Pick<Activity, 'kind'> & Partial<Pick<Activity, 'distanceKm' | 'durationSec' | 'place' | 'sport' | 'exercises'>>) {
+export async function addWorkout(
+  date: string,
+  w: Pick<Activity, 'kind'> & Partial<Pick<Activity, 'distanceKm' | 'durationSec' | 'place' | 'sport' | 'exercises' | 'memo' | 'feeling'>>,
+) {
   await db.transaction('rw', db.days, async () => {
     const day = (await db.days.get(date)) ?? emptyDay(date)
     const a: Activity = {
@@ -221,6 +256,8 @@ export async function addWorkout(date: string, w: Pick<Activity, 'kind'> & Parti
       place: w.place?.trim() || undefined,
       sport: w.sport,
       exercises: w.exercises?.length ? w.exercises : undefined,
+      memo: w.memo?.trim() || undefined,
+      feeling: w.feeling,
       source: 'app',
       companions: [],
       details: [],
@@ -228,6 +265,11 @@ export async function addWorkout(date: string, w: Pick<Activity, 'kind'> & Parti
     }
     await db.days.put({ ...day, activities: [...day.activities, a], savedAt: Date.now() })
   })
+}
+
+/** Sets the after-workout note of the index-th activity of a day; kept when the log is imported again. */
+export async function setMemo(date: string, index: number, memo: string | undefined, feeling: Feeling | undefined) {
+  await editRace(date, index, { memo: memo?.trim() || null, feeling: feeling ?? null })
 }
 
 /** Sets (or clears) the shoe of the index-th activity of a day. */

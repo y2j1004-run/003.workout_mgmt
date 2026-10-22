@@ -18,8 +18,8 @@ describe('db', () => {
 
   it('adds an app run with a shoe to a new or existing day', async () => {
     await saveDays(log('06.01 : 10키로'))
-    await addRun('2026-06-01', 5, '새신발')
-    await addRun('2026-06-02', 8, undefined, undefined, ' 광교호수공원 ')
+    await addRun('2026-06-01', 5, { shoe: '새신발' })
+    await addRun('2026-06-02', 8, { place: ' 광교호수공원 ' })
     const d1 = await db.days.get('2026-06-01')
     expect(d1?.activities.map((a) => [a.distanceKm, a.shoe, a.source])).toEqual([
       [10, undefined, undefined],
@@ -32,7 +32,7 @@ describe('db', () => {
   it('keeps app edits when the same day is imported again', async () => {
     await saveDays(log('06.01 : 10키로'))
     await setRunShoe('2026-06-01', 0, '레벨5')
-    await addRun('2026-06-01', 3, '레벨5')
+    await addRun('2026-06-01', 3, { shoe: '레벨5' })
     await saveDays(log('06.01 : 10키로, 웨이트'))
     const day = await db.days.get('2026-06-01')
     expect(day?.strength?.done).toBe(true)
