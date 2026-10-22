@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { runsOf } from '../analytics/stats'
 import { parseGarminCsv } from '../import/garminCsv'
 import { parseLog } from '../import/parseLog'
-import { addRun, db, deleteRun, editRun, saveDays, saveGarmin } from './db'
+import { addRun, db, deleteRun, editRun, saveDays, saveGarmin, setMemo } from './db'
 
 const LOG = `[ 2026년 ]
 10.18 : 4키로(공원)
@@ -20,6 +20,18 @@ beforeEach(async () => {
 })
 
 describe('editing and deleting runs', () => {
+  it('keeps the after-run note on logged and app runs when the log is imported again', async () => {
+    await setMemo('2026-10-20', 0, ' 후반에 다리가 무거웠다 ', 'hard')
+    await addRun('2026-10-21', 5, { memo: '가볍게 회복런', feeling: 'good' })
+    await saveDays(log())
+    expect((await db.days.get('2026-10-20'))?.activities[0]).toMatchObject({ memo: '후반에 다리가 무거웠다', feeling: 'hard', distanceKm: 12 })
+    expect((await db.days.get('2026-10-21'))?.activities[0]).toMatchObject({ memo: '가볍게 회복런', feeling: 'good' })
+    await setMemo('2026-10-20', 0, '', undefined)
+    const a = (await db.days.get('2026-10-20'))?.activities[0]
+    expect(a?.memo).toBeUndefined()
+    expect(a?.feeling).toBeUndefined()
+  })
+
   it('edits distance, place and time, and keeps the edit after re-importing the log', async () => {
     await editRun('2026-10-20', 0, { date: '2026-10-20', distanceKm: 12.3, place: '탄천', durationSec: 3600 })
     await saveDays(log())

@@ -19,6 +19,7 @@ import {
 } from '../db/goals'
 import { getProfile } from '../db/profile'
 import { pickGreeting } from '../analytics/greeting'
+import { feelingIcon } from '../components/MemoInput'
 import type { InBodyRecord } from '../inbody/inbody'
 
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
@@ -113,6 +114,7 @@ export default function Home() {
                 </span>
                 <span className="shrink-0 tabular-nums">
                   <b>{km(r.distanceKm)}</b>
+                  {feelingIcon(r.feeling) && <span className="ml-1">{feelingIcon(r.feeling)}</span>}
                   {r.shoe && <span className="ml-1 text-xs text-slate-500">👟 {r.shoe}</span>}
                 </span>
               </li>
