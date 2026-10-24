@@ -20,6 +20,9 @@ import {
 import { getProfile } from '../db/profile'
 import { pickGreeting } from '../analytics/greeting'
 import { feelingIcon } from '../components/MemoInput'
+import PlanCard from '../components/PlanCard'
+import { planNextWeek } from '../analytics/plan'
+import { ageOn, maxHeartRate } from '../analytics/fitness'
 import type { InBodyRecord } from '../inbody/inbody'
 
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
@@ -63,6 +66,13 @@ export default function Home() {
     weightKg: weights.at(-1)?.weightKg,
     startWeightKg: weights[0]?.weightKg,
   })
+  const plan = planNextWeek({
+    days,
+    inbody,
+    today: now,
+    weeklyKmGoal: goals.weeklyKm,
+    maxHr: maxHeartRate(runsOf(days), ageOn(profile.birthYear, now), profile.maxHr),
+  })
   const recent = runsOf(days).slice(-3).reverse()
   const diff = Math.round((week.km - week.lastWeekKmSoFar) * 10) / 10
   const maxDay = Math.max(...week.byDay, 1)
@@ -100,6 +110,7 @@ export default function Home() {
       </Card>
 
       <GoalsSummary progress={progress} custom={custom} now={now} />
+      {plan && <PlanCard plan={plan} />}
 
       <LatestBody inbody={inbody} bodyFat={bodyFat} />
 
