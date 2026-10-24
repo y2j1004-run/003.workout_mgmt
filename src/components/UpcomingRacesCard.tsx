@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { fmtTime, RACE_DISTANCES } from '../analytics/stats'
-import { parseGoalValue } from '../db/goals'
+import TimeInput from './TimeInput'
 import { addRace } from '../db/db'
 import { addUpcomingRace, daysUntil, deleteUpcomingRace, getUpcomingRaces, type UpcomingRace } from '../db/upcoming'
 
@@ -17,13 +17,13 @@ export default function UpcomingRacesCard() {
   const [date, setDate] = useState('')
   const [preset, setPreset] = useState<number | undefined>(21.0975)
   const [customKm, setCustomKm] = useState('')
-  const [goal, setGoal] = useState('')
+  const [goalSec, setGoalSec] = useState<number>()
+  const [formKey, setFormKey] = useState(0)
   const [msg, setMsg] = useState('')
   if (!races) return null
   const now = today()
   const km = preset ?? Number(customKm)
-  const goalSec = parseGoalValue(goal)
-  const goalOk = !goal.trim() || (!!goalSec?.time && goalSec.value > 0)
+  const goalOk = goalSec == null || goalSec > 0
   const valid = !!name.trim() && !!date && date >= now && km > 0 && goalOk
   const upcoming = races.filter((r) => r.date >= now)
   const past = races.filter((r) => r.date < now)
@@ -81,19 +81,21 @@ export default function UpcomingRacesCard() {
           className={`w-24 rounded-full border px-3 py-1 text-xs ${preset == null ? 'border-teal-700' : 'border-slate-300'}`}
         />
       </div>
-      <label className="mt-2 block text-xs text-slate-500">
+      <div className="mt-2 text-xs text-slate-500">
         목표 기록 (선택)
-        <input id="race-goal" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="예: 1:40:00" inputMode="numeric" className={input} />
-      </label>
-      {!goalOk && <p className="mt-1 text-xs text-amber-700">1:40:00이나 45:00처럼 시간으로 넣어 주세요.</p>}
+        <div className="mt-1">
+          <TimeInput key={formKey} id="race-goal" value={goalSec} onChange={setGoalSec} label="목표 기록" />
+        </div>
+      </div>
       <button
         disabled={!valid}
         onClick={async () => {
-          await addUpcomingRace({ name: name.trim(), date, distanceKm: km, goalSec: goalSec?.value })
+          await addUpcomingRace({ name: name.trim(), date, distanceKm: km, goalSec: goalSec || undefined })
           setMsg(`'${name.trim()}' 대회를 추가했습니다.`)
           setName('')
           setDate('')
-          setGoal('')
+          setGoalSec(undefined)
+          setFormKey(formKey + 1)
         }}
         className="mt-3 w-full rounded-lg bg-teal-700 py-2 font-semibold text-white disabled:opacity-40"
       >
@@ -116,9 +118,8 @@ export default function UpcomingRacesCard() {
 }
 
 function PastRace({ race: r }: { race: UpcomingRace }) {
-  const [time, setTime] = useState('')
-  const sec = parseGoalValue(time)
-  const ok = !!sec?.time && sec.value > 0
+  const [sec, setSec] = useState<number>()
+  const ok = !!sec && sec > 0
   return (
     <li className="py-2 text-sm">
       <div className="flex items-baseline justify-between gap-2">
@@ -127,19 +128,12 @@ function PastRace({ race: r }: { race: UpcomingRace }) {
           {r.date.slice(2).replaceAll('-', '.')} · {Math.round(r.distanceKm * 10) / 10}km
         </span>
       </div>
-      <div className="mt-1 flex gap-2">
-        <input
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          placeholder="완주 기록 1:33:20"
-          inputMode="numeric"
-          aria-label={`${r.name} 완주 기록`}
-          className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-        />
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <TimeInput id={`result-${r.id}`} value={sec} onChange={setSec} label={`${r.name} 완주 기록`} />
         <button
           disabled={!ok}
           onClick={async () => {
-            await addRace(r.date, r.name, r.distanceKm, sec!.value)
+            await addRace(r.date, r.name, r.distanceKm, sec)
             await deleteUpcomingRace(r.id)
           }}
           className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
