@@ -4,6 +4,7 @@ import ImportLog from '../components/ImportLog'
 import GoalsCard from '../components/GoalsCard'
 import MyProfileCard from '../components/MyProfileCard'
 import ProfileCard from '../components/ProfileCard'
+import UpcomingRacesCard from '../components/UpcomingRacesCard'
 
 export default function Settings() {
   return (
@@ -14,6 +15,7 @@ export default function Settings() {
       <GarminImport />
       <BackupRestore />
       <ProfileCard />
+      <UpcomingRacesCard />
       <GoalsCard />
       <p className="text-center text-xs text-slate-400 tabular-nums">앱 버전 {new Date(__BUILD_TIME__).toLocaleString('ko-KR')}</p>
     </div>

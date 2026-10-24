@@ -2,6 +2,7 @@ import type { Goals } from '../analytics/home'
 import type { InBodyRecord } from '../inbody/inbody'
 import { getCustomGoals, getGoals, setCustomGoals, setGoals, type CustomGoal } from './goals'
 import { getStatsOrder, setStatsOrder } from './layout'
+import { getUpcomingRaces, setUpcomingRaces, type UpcomingRace } from './upcoming'
 import { getProfile, getVo2Entries, setProfile, setVo2Entries, type Profile, type Vo2Entry } from './profile'
 import { db, type Shoe, type StoredDay } from './db'
 
@@ -21,10 +22,11 @@ export interface Backup {
   profile?: Profile
   vo2max?: Vo2Entry[]
   customGoals?: CustomGoal[]
+  upcomingRaces?: UpcomingRace[]
 }
 
 export async function createBackup(): Promise<Backup> {
-  const [days, shoes, inbody, goals, statsOrder, profile, vo2max, customGoals] = await Promise.all([
+  const [days, shoes, inbody, goals, statsOrder, profile, vo2max, customGoals, upcomingRaces] = await Promise.all([
     db.days.orderBy('date').toArray(),
     db.shoes.toArray(),
     db.inbody.orderBy('date').toArray(),
@@ -33,8 +35,9 @@ export async function createBackup(): Promise<Backup> {
     getProfile(),
     getVo2Entries(),
     getCustomGoals(),
+    getUpcomingRaces(),
   ])
-  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody, goals, statsOrder, profile, vo2max, customGoals }
+  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody, goals, statsOrder, profile, vo2max, customGoals, upcomingRaces }
 }
 
 export function backupFileName(b: Backup) {
@@ -75,6 +78,10 @@ export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ day
     if (b.statsOrder && (mode === 'replace' || !(await getStatsOrder()))) await setStatsOrder(b.statsOrder)
     if (b.profile && (mode === 'replace' || !Object.keys(await getProfile()).length)) await setProfile(b.profile)
     // the backup copy wins for the same date, like InBody records
+    if (b.upcomingRaces) {
+      const mine = mode === 'replace' ? [] : await getUpcomingRaces()
+      await setUpcomingRaces([...mine, ...b.upcomingRaces.filter((r) => !mine.some((m) => m.id === r.id))])
+    }
     if (b.customGoals) {
       const mine = mode === 'replace' ? [] : await getCustomGoals()
       await setCustomGoals([...mine, ...b.customGoals.filter((g) => !mine.some((m) => m.id === g.id))])
