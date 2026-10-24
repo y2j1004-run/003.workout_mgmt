@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useState } from 'react'
 import type { Goals } from '../analytics/home'
 import { fmtTime } from '../analytics/stats'
+import TimeInput from './TimeInput'
 import {
   addCustomGoal,
   categoryIcon,
@@ -93,17 +94,24 @@ function CustomGoals() {
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState<string>('etc')
   const [repeat, setRepeat] = useState<GoalRepeat>('once')
+  const [valueType, setValueType] = useState<'number' | 'time'>('number')
   const [target, setTarget] = useState('')
+  const [targetSec, setTargetSec] = useState<number>()
+  const [formKey, setFormKey] = useState(0)
   const [unit, setUnit] = useState('')
   const [lower, setLower] = useState(false)
   const [due, setDue] = useState('')
   const [msg, setMsg] = useState('')
   if (!goals) return null
-  const parsed = parseGoalValue(target)
-  const valid = !!title.trim() && (repeat !== 'once' || !target.trim() || (!!parsed && parsed.value > 0))
+  const isTime = valueType === 'time'
+  const num = Number(target)
+  const targetValue = isTime ? targetSec : target.trim() && num > 0 ? num : undefined
+  const valid = !!title.trim() && (repeat !== 'once' || (isTime ? targetSec == null || targetSec > 0 : !target.trim() || num > 0))
   const reset = () => {
     setTitle('')
     setTarget('')
+    setTargetSec(undefined)
+    setFormKey(formKey + 1)
     setUnit('')
     setLower(false)
     setDue('')
@@ -159,25 +167,43 @@ function CustomGoals() {
       </label>
       {repeat === 'once' && (
         <>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            <label className="text-xs text-slate-500">
-              목표 값
-              <input id="goal-target" inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="10 또는 45:00" className={input} />
-            </label>
-            <label className="text-xs text-slate-500">
-              단위
-              <input id="goal-unit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="개" disabled={parsed?.time} className={`${input} disabled:bg-slate-50`} />
-            </label>
-            <label className="text-xs text-slate-500">
-              기한
-              <input id="goal-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} className={`${input} px-1 text-sm`} />
-            </label>
+          <p className="mt-2 mb-1 text-xs text-slate-500">목표 값 (선택)</p>
+          <div className="flex gap-1.5">
+            {(
+              [
+                ['number', '숫자 (개, kg, 회…)'],
+                ['time', '시간 기록 (10k TT…)'],
+              ] as const
+            ).map(([t, label]) => (
+              <button key={t} type="button" onClick={() => setValueType(t)} className={chip(valueType === t)}>
+                {label}
+              </button>
+            ))}
           </div>
-          <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-            <input id="goal-lower" type="checkbox" checked={lower || !!parsed?.time} disabled={parsed?.time} onChange={(e) => setLower(e.target.checked)} className="h-4 w-4 accent-teal-700" />
-            낮을수록 좋음 (기록 단축, 체중 감량 등){parsed?.time ? ' · 시간 목표는 자동' : ''}
+          {isTime ? (
+            <div className="mt-2">
+              <TimeInput key={formKey} id="goal-target-time" value={targetSec} onChange={setTargetSec} label="목표 기록" />
+            </div>
+          ) : (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="text-xs text-slate-500">
+                목표 숫자
+                <input id="goal-target" type="number" inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="10" className={input} />
+              </label>
+              <label className="text-xs text-slate-500">
+                단위
+                <input id="goal-unit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="개" className={input} />
+              </label>
+            </div>
+          )}
+          <label className="mt-2 block text-xs text-slate-500">
+            기한 (선택)
+            <input id="goal-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} className={input} />
           </label>
-          {target.trim() && !parsed && <p className="mt-1 text-xs text-amber-700">숫자나 45:00 같은 시간으로 넣어 주세요.</p>}
+          <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+            <input id="goal-lower" type="checkbox" checked={lower || isTime} disabled={isTime} onChange={(e) => setLower(e.target.checked)} className="h-4 w-4 accent-teal-700" />
+            낮을수록 좋음 (기록 단축, 체중 감량 등){isTime ? ' · 시간 기록은 자동' : ''}
+          </label>
         </>
       )}
       <button
@@ -188,10 +214,10 @@ function CustomGoals() {
             title: title.trim(),
             category,
             repeat,
-            target: once && parsed && parsed.value > 0 ? parsed.value : undefined,
-            time: once && parsed?.time ? true : undefined,
-            lower: once && (lower || parsed?.time) ? true : undefined,
-            unit: once && !parsed?.time ? unit.trim() || undefined : undefined,
+            target: once ? targetValue : undefined,
+            time: once && isTime && targetValue ? true : undefined,
+            lower: once && targetValue && (lower || isTime) ? true : undefined,
+            unit: once && !isTime ? unit.trim() || undefined : undefined,
             due: once ? due || undefined : undefined,
           })
           setMsg(`'${title.trim()}' 목표를 추가했습니다.`)
@@ -240,15 +266,23 @@ function GoalRow({ goal: g }: { goal: CustomGoal }) {
           삭제
         </button>
       </div>
-      {repeat === 'once' && g.target != null && (
+      {repeat === 'once' && g.target != null && g.time && (
+        <div className="mt-1 pl-6 text-xs text-slate-500">
+          지금 기록 (목표 {formatGoalValue(g, g.target)} 이하)
+          <div className="mt-1">
+            <TimeInput id={`goal-now-${g.id}`} value={g.current} onChange={(sec) => updateCustomGoal(g.id, { current: sec })} label={`${g.title} 현재 값`} />
+          </div>
+        </div>
+      )}
+      {repeat === 'once' && g.target != null && !g.time && (
         <label className="mt-1 flex items-center gap-2 pl-6 text-xs text-slate-500">
           지금
           <input
+            type="number"
             inputMode="decimal"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
             onBlur={() => updateCustomGoal(g.id, { current: parseGoalValue(current)?.value })}
-            placeholder={g.time ? '47:30' : ''}
             aria-label={`${g.title} 현재 값`}
             className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-900"
           />
