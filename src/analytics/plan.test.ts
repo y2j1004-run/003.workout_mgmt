@@ -63,4 +63,30 @@ describe('planNextWeek', () => {
   it('needs some running history', () => {
     expect(planNextWeek({ days: [], inbody: [], today: '2026-10-24' })).toBeUndefined()
   })
+
+  it('builds the race week around a race in it', () => {
+    const races = [{ id: 'r', date: '2026-11-01', name: '가을 하프', distanceKm: 21.0975, goalSec: 6000 }]
+    const p = planNextWeek({ days: history(), inbody: [], today: '2026-10-24', races })!
+    expect(p.race?.name).toBe('가을 하프')
+    const sun = p.days[6].items[0]
+    expect(sun).toMatchObject({ kind: 'race', km: 21.1 })
+    expect(sun.detail).toContain('4:44/km')
+    expect(p.days[5].items[0].title).toBe('가볍게 몸풀기')
+    expect(p.days.flatMap((d) => d.items).some((i) => i.kind === 'long')).toBe(false)
+    expect(p.days.flatMap((d) => d.items).filter((i) => i.kind === 'quality')).toHaveLength(1)
+    expect(p.targetKm).toBeLessThan(40)
+  })
+
+  it('tapers the week before a half and two weeks before a marathon', () => {
+    const half = planNextWeek({ days: history(), inbody: [], today: '2026-10-24', races: [{ id: 'h', date: '2026-11-08', name: '하프', distanceKm: 21.0975 }] })!
+    const base = planNextWeek({ days: history(), inbody: [], today: '2026-10-24' })!
+    expect(half.targetKm).toBeLessThan(base.targetKm)
+    expect(half.reasons.join()).toContain('대회 전 주')
+    expect(half.days.flatMap((d) => d.items).find((i) => i.kind === 'quality')?.title).toBe('레이스 페이스런')
+    const full = planNextWeek({ days: history(), inbody: [], today: '2026-10-24', races: [{ id: 'f', date: '2026-11-15', name: '풀', distanceKm: 42.195 }] })!
+    expect(full.reasons.join()).toContain('2주 전')
+    const far = planNextWeek({ days: history(), inbody: [], today: '2026-10-24', races: [{ id: 'x', date: '2026-12-20', name: '먼 대회', distanceKm: 10 }] })!
+    expect(far.race).toBeUndefined()
+    expect(far.targetKm).toBe(base.targetKm)
+  })
 })

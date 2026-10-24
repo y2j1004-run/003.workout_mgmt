@@ -7,11 +7,12 @@ import type { DayEntry } from '../import/parseLog'
 import type { InBodyRecord } from '../inbody/inbody'
 import { weekStart } from './home'
 import { intensityMix, zoneBounds, type MaxHr } from './fitness'
-import { addDays, isRace, runsOf } from './stats'
+import { addDays, fmtTime, isRace, runsOf } from './stats'
 import { themeOf } from './themes'
 import { didStrength } from './workouts'
+import type { UpcomingRace } from '../db/upcoming'
 
-export type PlanKind = 'long' | 'quality' | 'easy' | 'strength' | 'rest'
+export type PlanKind = 'race' | 'long' | 'quality' | 'easy' | 'strength' | 'rest'
 
 export interface PlanItem {
   kind: PlanKind
@@ -33,6 +34,8 @@ export interface WeekPlan {
   /** why the plan looks the way it does */
   reasons: string[]
   days: PlanDay[]
+  /** the next race the plan works toward */
+  race?: UpcomingRace
 }
 
 export interface PlanInput {
@@ -41,6 +44,8 @@ export interface PlanInput {
   today: string
   weeklyKmGoal?: number
   maxHr?: MaxHr
+  /** races the user has signed up for */
+  races?: UpcomingRace[]
 }
 
 const DOW = ['월', '화', '수', '목', '금', '토', '일']
@@ -49,7 +54,7 @@ const half = (n: number) => Math.round(n * 2) / 2
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? 0
 
 /** Plans the week starting the Monday after `today`; undefined when there is too little history. */
-export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr }: PlanInput): WeekPlan | undefined {
+export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr, races = [] }: PlanInput): WeekPlan | undefined {
   const runs = runsOf(days)
   const start = addDays(weekStart(today), 7)
   // the four whole weeks before the current one, newest first
@@ -104,7 +109,35 @@ export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr }: PlanI
     if (Math.abs(clamped - target) >= 1) reasons.push(`주간 목표 ${weeklyKmGoal}km에 맞춰 ${weeklyKmGoal > clamped ? '조금씩 늘려 가요' : '조정했어요'}`)
     target = clamped
   }
+  // taper toward a race: in its week, and the week (two for a marathon) before
+  const nextRace = races.filter((r) => r.date >= start).sort((a, b) => a.date.localeCompare(b.date))[0]
+  const weeksOut = nextRace ? Math.floor((Date.parse(nextRace.date) - Date.parse(start)) / (7 * 864e5)) : undefined
+  const size = nextRace ? (nextRace.distanceKm >= 30 ? 'full' : nextRace.distanceKm >= 15 ? 'half' : 'short') : undefined
+  const TAPER: Record<string, number[]> = { full: [0.5, 0.75, 0.9], half: [0.6, 0.85], short: [0.75] }
+  const taper = size && weeksOut != null ? TAPER[size][weeksOut] : undefined
+  if (!taper && nextRace && weeksOut != null && weeksOut <= 3) {
+    reasons.push(`🏁 ${nextRace.name}(${raceLabel(nextRace.distanceKm)})까지 D-${daysBetween(today, nextRace.date)}`)
+  }
+  if (taper) {
+    target = avgKm * taper
+    recovery = false
+    // the volume reasons above no longer apply
+    reasons.splice(1)
+    reasons.push(`🏁 ${nextRace!.name}(${raceLabel(nextRace!.distanceKm)})까지 D-${daysBetween(today, nextRace!.date)}`)
+    const pct = Math.round(taper * 100)
+    reasons.push(
+      weeksOut === 0
+        ? `대회 주간이라 대회 말고는 평소의 ${pct}%만 달려요`
+        : weeksOut === 1
+          ? `대회 전 주라 거리를 평소의 ${pct}%로 줄이고 롱런도 짧게 해요`
+          : `대회 2주 전이라 거리를 평소의 ${pct}%로 줄이기 시작해요`,
+    )
+  }
   target = Math.max(5, Math.round(target))
+
+  const bounds = maxHr ? zoneBounds(maxHr) : undefined
+  const easyHr = bounds ? ` · 심박 ${bounds[3]} 미만` : ''
+  if (nextRace && weeksOut === 0) return raceWeek({ start, race: nextRace, target, reasons, days, runs, today, easyHr, inbody })
 
   // which weekdays: the user's usual running days, keeping at least one day off
   const since = addDays(weekStart(today), -56)
@@ -120,13 +153,12 @@ export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr }: PlanI
   const qualityDow = recovery || runDays < 3 ? undefined : [longDow - 3, longDow - 2, longDow - 4].find((i) => i >= 0 && runDow.includes(i))
 
   const recentLong = median(weeks.map((w) => w.longest).filter((x) => x > 0))
-  const longKm = half(Math.min(recovery ? recentLong * 0.6 : Math.max(recentLong, target * 0.25) * 1.05, target * 0.35, 35))
+  const longCap = taper ? recentLong * (weeksOut === 1 ? 0.65 : 0.85) : 35
+  const longKm = half(Math.min(recovery ? recentLong * 0.6 : Math.max(recentLong, target * 0.25) * 1.05, target * 0.35, longCap, 35))
   const qualityKm = qualityDow == null ? 0 : half(Math.max(6, target * 0.15))
   const easyDays = runDow.filter((i) => i !== longDow && i !== qualityDow)
   const easyKm = easyDays.length ? half(Math.max(4, (target - longKm - qualityKm) / easyDays.length)) : 0
 
-  const bounds = maxHr ? zoneBounds(maxHr) : undefined
-  const easyHr = bounds ? ` · 심박 ${bounds[3]} 미만` : ''
   const lastQuality = runs.filter((r) => r.date > addDays(today, -14) && ['인터벌', '템포', '지속주', '빌드업'].includes(themeOf(r).theme ?? '')).at(-1)
   // alternate: intervals unless the last hard session was already intervals
   const doIntervals = !lastQuality || themeOf(lastQuality).theme !== '인터벌'
@@ -136,8 +168,11 @@ export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr }: PlanI
     if (i === longDow) {
       plan[i].items.push({ kind: 'long', title: recovery ? '롱런 (가볍게)' : 'LSD 롱런', km: longKm, detail: `편한 속도로 끝까지${easyHr}` })
     } else if (i === qualityDow) {
+      const pace = nextRace?.goalSec ? ` · 목표 페이스 ${fmtPace(nextRace.goalSec / nextRace.distanceKm)}` : ''
       plan[i].items.push(
-        doIntervals
+        taper && nextRace
+          ? { kind: 'quality', title: '레이스 페이스런', km: qualityKm, detail: `워밍업 2km → 대회 페이스 ${half(Math.min(qualityKm * 0.5, nextRace.distanceKm * 0.25))}km → 쿨다운${pace}` }
+          : doIntervals
           ? { kind: 'quality', title: '인터벌', km: qualityKm, detail: `워밍업 2km → 1km × 5회(400m 회복조깅) → 쿨다운${bounds ? ` · 빠른 구간 심박 ${bounds[4]} 이상` : ''}` }
           : { kind: 'quality', title: '템포런', km: qualityKm, detail: `워밍업 2km → 템포 ${half(qualityKm * 0.5)}km → 쿨다운${bounds ? ` · 템포 심박 ${bounds[3]}~${bounds[4] - 1}` : ''}` },
       )
@@ -161,7 +196,58 @@ export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr }: PlanI
     const mix = intensityMix(days, maxHr, addDays(today, -27), today)
     if (mix.easyShare != null && mix.easyShare < 0.75) reasons.push(`최근 쉬운 러닝 비율이 ${Math.round(mix.easyShare * 100)}%라 이지런은 심박을 꼭 낮게 유지하세요`)
   }
-  return { start, targetKm: Math.round(plan.reduce((s, d) => s + d.items.reduce((t, x) => t + (x.km ?? 0), 0), 0)), reasons, days: plan }
+  return { start, targetKm: weekKm(plan), reasons, days: plan, race: nextRace && weeksOut != null && weeksOut <= 3 ? nextRace : undefined }
+}
+
+const weekKm = (plan: PlanDay[]) => Math.round(plan.reduce((s, d) => s + d.items.reduce((t, x) => t + (x.kind === 'race' ? 0 : (x.km ?? 0)), 0), 0))
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 864e5)
+const fmtPace = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}/km`
+function raceLabel(km: number) {
+  if (Math.abs(km - 42.195) < 0.5) return '풀코스'
+  if (Math.abs(km - 21.0975) < 0.3) return '하프'
+  return `${Math.round(km * 10) / 10}km`
+}
+
+/**
+ * The week with the race in it: sharpen early, rest or shake out the day before, the race,
+ * then recovery. No long run; at most one light strength session well before the race.
+ */
+function raceWeek(o: {
+  start: string
+  race: UpcomingRace
+  target: number
+  reasons: string[]
+  days: DayEntry[]
+  runs: ReturnType<typeof runsOf>
+  today: string
+  easyHr: string
+  inbody: InBodyRecord[]
+}): WeekPlan {
+  const { start, race, target, reasons, easyHr } = o
+  const raceDow = dowOf(race.date)
+  const plan: PlanDay[] = DOW.map((dow, i) => ({ date: addDays(start, i), dow, items: [] }))
+  const pace = race.goalSec ? `목표 ${fmtTime(race.goalSec)} (페이스 ${fmtPace(race.goalSec / race.distanceKm)})` : '초반에 무리하지 말고 후반에 힘 쓰기'
+  plan[raceDow].items.push({ kind: 'race', title: `🏁 ${race.name}`, km: Math.round(race.distanceKm * 10) / 10, detail: pace })
+  if (raceDow >= 1) plan[raceDow - 1].items.push({ kind: 'easy', title: '가볍게 몸풀기', km: 3, detail: '20분 조깅 + 짧은 가속주 3회, 일찍 자기' })
+  // before the race: one sharpening run 3–5 days out, easy runs otherwise, a day off two days out
+  const before = [...Array(Math.max(0, raceDow - 1)).keys()]
+  const sharpen = before.filter((i) => raceDow - i >= 3 && raceDow - i <= 5).at(-1)
+  const easyBefore = before.filter((i) => i !== sharpen && raceDow - i !== 2)
+  const sharpenKm = sharpen == null ? 0 : half(Math.min(10, Math.max(6, target * 0.25)))
+  const easyKm = easyBefore.length ? half(Math.min(10, Math.max(4, (target - sharpenKm - 3) / easyBefore.length))) : 0
+  if (sharpen != null) {
+    const reps = race.distanceKm >= 15 ? `대회 페이스 ${race.distanceKm >= 30 ? 5 : 3}km` : '1km × 3회 대회 페이스'
+    const goalPace = race.goalSec ? ` · ${fmtPace(race.goalSec / race.distanceKm)}` : ''
+    plan[sharpen].items.push({ kind: 'quality', title: '레이스 페이스 점검', km: sharpenKm, detail: `워밍업 2km → ${reps} → 쿨다운${goalPace}` })
+  }
+  for (const i of easyBefore) plan[i].items.push({ kind: 'easy', title: '이지런', km: easyKm, detail: `짧고 편하게${easyHr}` })
+  // after the race: a day off, then short recovery jogs
+  for (let i = raceDow + 2; i < 7; i++) plan[i].items.push({ kind: 'easy', title: '회복 조깅', km: half(Math.min(easyKm || 5, race.distanceKm * 0.3)), detail: '아주 천천히, 다리가 무거우면 걷기로' })
+  const strengthDay = before.find((i) => raceDow - i >= 4)
+  if (strengthDay != null) plan[strengthDay].items.push({ ...strengthSessions(o.inbody, [])[0], title: '웨이트 (가볍게)', detail: '평소 무게의 70%, 세트 수 줄이기' })
+  for (const d of plan) if (!d.items.length) d.items.push({ kind: 'rest', title: '휴식', detail: '푹 쉬기' })
+  reasons.push('대회 전날은 가볍게, 대회 다음 날은 쉬어요')
+  return { start, targetKm: weekKm(plan), reasons, days: plan, race }
 }
 
 /** Two strength sessions, shaped by the latest InBody segment results. */

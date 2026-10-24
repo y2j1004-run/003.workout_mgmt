@@ -18,6 +18,7 @@ import {
   type CustomGoal,
 } from '../db/goals'
 import { getProfile } from '../db/profile'
+import { getUpcomingRaces } from '../db/upcoming'
 import { pickGreeting } from '../analytics/greeting'
 import { feelingIcon } from '../components/MemoInput'
 import PlanCard from '../components/PlanCard'
@@ -35,7 +36,8 @@ export default function Home() {
   const goals = useLiveQuery(getGoals)
   const custom = useLiveQuery(getCustomGoals)
   const profile = useLiveQuery(getProfile)
-  if (!days || !inbody || !goals || !custom || !profile) return null
+  const upcoming = useLiveQuery(getUpcomingRaces)
+  if (!days || !inbody || !goals || !custom || !profile || !upcoming) return null
 
   const now = today()
   const dateLabel = new Date(`${now}T00:00:00`).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })
@@ -72,6 +74,7 @@ export default function Home() {
     today: now,
     weeklyKmGoal: goals.weeklyKm,
     maxHr: maxHeartRate(runsOf(days), ageOn(profile.birthYear, now), profile.maxHr),
+    races: upcoming,
   })
   const recent = runsOf(days).slice(-3).reverse()
   const diff = Math.round((week.km - week.lastWeekKmSoFar) * 10) / 10
@@ -110,7 +113,7 @@ export default function Home() {
       </Card>
 
       <GoalsSummary progress={progress} custom={custom} now={now} />
-      {plan && <PlanCard plan={plan} />}
+      {plan && <PlanCard plan={plan} today={now} nextRace={upcoming.find((r) => r.date >= now)} />}
 
       <LatestBody inbody={inbody} bodyFat={bodyFat} />
 

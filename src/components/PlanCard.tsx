@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import type { WeekPlan, PlanKind } from '../analytics/plan'
+import { daysUntil, type UpcomingRace } from '../db/upcoming'
 
 const STYLE: Record<PlanKind, string> = {
+  race: 'bg-rose-600 text-white',
   long: 'bg-teal-700 text-white',
   quality: 'bg-rose-100 text-rose-800',
   easy: 'bg-teal-50 text-teal-800',
   strength: 'bg-amber-100 text-amber-800',
   rest: 'bg-slate-100 text-slate-500',
 }
-const ICON: Record<PlanKind, string> = { long: '🏃', quality: '⚡', easy: '🏃', strength: '🏋️', rest: '😴' }
+const ICON: Record<PlanKind, string> = { race: '', long: '🏃', quality: '⚡', easy: '🏃', strength: '🏋️', rest: '😴' }
 
 /** Next week's suggested schedule, worked out from the records. */
-export default function PlanCard({ plan }: { plan: WeekPlan }) {
+export default function PlanCard({ plan, today, nextRace }: { plan: WeekPlan; today: string; nextRace?: UpcomingRace }) {
+  const race = plan.race ?? nextRace
   const [open, setOpen] = useState(true)
   const range = `${plan.start.slice(5).replace('-', '.')} ~ ${plan.days.at(-1)!.date.slice(5).replace('-', '.')}`
   return (
@@ -22,6 +25,12 @@ export default function PlanCard({ plan }: { plan: WeekPlan }) {
           {range} · 러닝 {plan.targetKm}km {open ? '▲' : '▼'}
         </span>
       </button>
+      {race && (
+        <p className="mt-1 text-sm font-semibold text-rose-700">
+          🏁 {race.name} D-{daysUntil(race, today)}
+          <span className="ml-1 text-xs font-normal text-slate-500">({race.date.slice(5).replace('-', '.')})</span>
+        </p>
+      )}
       {open && (
         <>
           <ul className="mt-3 divide-y divide-slate-100">
