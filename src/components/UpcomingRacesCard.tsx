@@ -2,7 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { fmtTime, RACE_DISTANCES } from '../analytics/stats'
 import { parseGoalValue } from '../db/goals'
-import { addUpcomingRace, daysUntil, deleteUpcomingRace, getUpcomingRaces } from '../db/upcoming'
+import { addRace } from '../db/db'
+import { addUpcomingRace, daysUntil, deleteUpcomingRace, getUpcomingRaces, type UpcomingRace } from '../db/upcoming'
 
 const input = 'mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-base text-slate-900'
 const chip = (active: boolean) =>
@@ -100,13 +101,55 @@ export default function UpcomingRacesCard() {
       </button>
       {msg && <p className="mt-2 text-sm text-teal-700">{msg}</p>}
       {past.length > 0 && (
-        <p className="mt-3 text-xs text-slate-400">
-          지난 대회 {past.length}개는 계획에 쓰지 않아요. 결과는 통계 → 대회 기록에서 관리하세요.{' '}
-          <button onClick={() => past.forEach((r) => deleteUpcomingRace(r.id))} className="text-teal-700">
-            지난 대회 지우기
-          </button>
-        </p>
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <h3 className="text-sm font-semibold">끝난 대회 · 기록 입력</h3>
+          <p className="mb-2 text-xs text-slate-500">기록을 넣으면 통계 → 대회 기록으로 옮겨지고, 추천 운동의 페이스 계산에 쓰여요.</p>
+          <ul className="divide-y divide-slate-100">
+            {past.map((r) => (
+              <PastRace key={r.id} race={r} />
+            ))}
+          </ul>
+        </div>
       )}
     </div>
+  )
+}
+
+function PastRace({ race: r }: { race: UpcomingRace }) {
+  const [time, setTime] = useState('')
+  const sec = parseGoalValue(time)
+  const ok = !!sec?.time && sec.value > 0
+  return (
+    <li className="py-2 text-sm">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-semibold">🏁 {r.name}</span>
+        <span className="text-xs text-slate-500 tabular-nums">
+          {r.date.slice(2).replaceAll('-', '.')} · {Math.round(r.distanceKm * 10) / 10}km
+        </span>
+      </div>
+      <div className="mt-1 flex gap-2">
+        <input
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          placeholder="완주 기록 1:33:20"
+          inputMode="numeric"
+          aria-label={`${r.name} 완주 기록`}
+          className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+        />
+        <button
+          disabled={!ok}
+          onClick={async () => {
+            await addRace(r.date, r.name, r.distanceKm, sec!.value)
+            await deleteUpcomingRace(r.id)
+          }}
+          className="rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+        >
+          기록 저장
+        </button>
+        <button onClick={() => confirm(`'${r.name}'을(를) 목록에서 지울까요?`) && deleteUpcomingRace(r.id)} className="px-1 text-xs text-slate-400">
+          삭제
+        </button>
+      </div>
+    </li>
   )
 }

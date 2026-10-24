@@ -89,4 +89,15 @@ describe('planNextWeek', () => {
     expect(far.race).toBeUndefined()
     expect(far.targetKm).toBe(base.targetKm)
   })
+
+  it('sets paces from the best recent race and predicts the next one', () => {
+    const days = history()
+    days.push(day('2026-10-04', [run(21.0975, { event: '가을 하프마라톤', race: true, durationSec: 5495 })]))
+    const p = planNextWeek({ days, inbody: [], today: '2026-10-24', races: [{ id: 'f', date: '2026-11-15', name: '풀', distanceKm: 42.195, goalSec: 3 * 3600 }] })!
+    expect(p.reasons.join()).toContain('VDOT 50.0')
+    expect(p.reasons.join()).toMatch(/예상 기록 3:1\d:\d\d — 목표 3:00:00은 도전적이에요/)
+    const easy = p.days.flatMap((d) => d.items).find((i) => i.kind === 'easy')!
+    expect(easy.detail).toMatch(/5:0\d~5:3\d\/km/)
+    expect(p.days.flatMap((d) => d.items).find((i) => i.kind === 'quality')!.detail).toContain('4:16/km')
+  })
 })
