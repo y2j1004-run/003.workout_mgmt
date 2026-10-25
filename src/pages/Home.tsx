@@ -22,6 +22,9 @@ import { getUpcomingRaces } from '../db/upcoming'
 import { pickGreeting } from '../analytics/greeting'
 import { feelingIcon } from '../components/MemoInput'
 import PlanCard from '../components/PlanCard'
+import { SleepCard } from '../components/HealthCards'
+import type { SleepNight } from '../shealth/shealth'
+import { sleepGoalDates, withSleepChecks } from '../shealth/sleepStats'
 import { planNextWeek } from '../analytics/plan'
 import { ageOn, maxHeartRate } from '../analytics/fitness'
 import type { InBodyRecord } from '../inbody/inbody'
@@ -37,7 +40,8 @@ export default function Home() {
   const custom = useLiveQuery(getCustomGoals)
   const profile = useLiveQuery(getProfile)
   const upcoming = useLiveQuery(getUpcomingRaces)
-  if (!days || !inbody || !goals || !custom || !profile || !upcoming) return null
+  const sleep = useLiveQuery(() => db.sleep.orderBy('date').toArray())
+  if (!days || !inbody || !goals || !custom || !profile || !upcoming || !sleep) return null
 
   const now = today()
   const dateLabel = new Date(`${now}T00:00:00`).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })
@@ -46,7 +50,8 @@ export default function Home() {
     return (
       <section className="space-y-4">
         <Header date={dateLabel} name={profile.name} sports={profile.sports} />
-        {custom.length > 0 && <GoalsSummary progress={[]} custom={custom} now={now} />}
+        {custom.length > 0 && <GoalsSummary progress={[]} custom={custom} now={now} nights={sleep} />}
+        <SleepCard nights={sleep} today={now} compact />
         <Card title="시작하기">
           <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">
             <li>⚙️ 설정 → 운동 기록 가져오기로 메모장 기록을 넣거나</li>
@@ -75,6 +80,7 @@ export default function Home() {
     weeklyKmGoal: goals.weeklyKm,
     maxHr: maxHeartRate(runsOf(days), ageOn(profile.birthYear, now), profile.maxHr),
     races: upcoming,
+    sleep,
   })
   const recent = runsOf(days).slice(-3).reverse()
   const diff = Math.round((week.km - week.lastWeekKmSoFar) * 10) / 10
@@ -112,7 +118,8 @@ export default function Home() {
         </div>
       </Card>
 
-      <GoalsSummary progress={progress} custom={custom} now={now} />
+      <GoalsSummary progress={progress} custom={custom} now={now} nights={sleep} />
+      <SleepCard nights={sleep} today={now} compact />
       {plan && <PlanCard plan={plan} today={now} nextRace={upcoming.find((r) => r.date >= now)} />}
 
       <LatestBody inbody={inbody} bodyFat={bodyFat} />
@@ -162,8 +169,9 @@ function useGreeting(): string {
   return greeting
 }
 
-function GoalsSummary({ progress, custom, now }: { progress: GoalProgress[]; custom: CustomGoal[]; now: string }) {
-  const habits = custom.filter((g) => repeatOf(g) !== 'once')
+function GoalsSummary({ progress, custom, now, nights }: { progress: GoalProgress[]; custom: CustomGoal[]; now: string; nights: SleepNight[] }) {
+  // sleep goals also count the nights recorded long enough
+  const habits = custom.filter((g) => repeatOf(g) !== 'once').map((g) => withSleepChecks(g, nights))
   const once = custom.filter((g) => repeatOf(g) === 'once')
   return (
     <Card title="목표">
@@ -216,7 +224,7 @@ function GoalsSummary({ progress, custom, now }: { progress: GoalProgress[]; cus
                       {title}
                       {counts}
                     </div>
-                    <HabitDays goal={g} today={now} />
+                    <HabitDays goal={g} today={now} auto={sleepGoalDates(g, nights)} />
                   </li>
                 )
               })}
@@ -260,29 +268,33 @@ function GoalsSummary({ progress, custom, now }: { progress: GoalProgress[]; cus
 }
 
 /** The last seven days of a daily habit; any of them can be checked or unchecked, so a missed day can be filled in later. */
-function HabitDays({ goal: g, today }: { goal: CustomGoal; today: string }) {
+function HabitDays({ goal: g, today, auto }: { goal: CustomGoal; today: string; auto: Set<string> }) {
   const checks = new Set(g.checks ?? [])
   const dates = Array.from({ length: 7 }, (_, i) => addDays(today, i - 6))
   return (
-    <div className="mt-1.5 grid grid-cols-7 gap-1" role="group" aria-label={`${g.title} 최근 7일`}>
-      {dates.map((d) => {
-        const on = checks.has(d)
-        const isToday = d === today
-        const dow = WEEKDAYS[(new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7]
-        return (
-          <button
-            key={d}
-            onClick={() => toggleHabit(g.id, d)}
-            aria-pressed={on}
-            aria-label={`${d} ${on ? '완료' : '미완료'}`}
-            className={`flex flex-col items-center rounded-lg py-1 text-[11px] leading-tight ${on ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-500'} ${isToday ? 'ring-2 ring-teal-700 ring-offset-1' : ''}`}
-          >
-            <span className={isToday ? 'font-bold' : ''}>{isToday ? '오늘' : dow}</span>
-            <span className="tabular-nums">{on ? '✓' : Number(d.slice(8))}</span>
-          </button>
-        )
-      })}
-    </div>
+    <>
+      <div className="mt-1.5 grid grid-cols-7 gap-1" role="group" aria-label={`${g.title} 최근 7일`}>
+        {dates.map((d) => {
+          const on = checks.has(d)
+          const byWatch = auto.has(d)
+          const isToday = d === today
+          const dow = WEEKDAYS[(new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7]
+          return (
+            <button
+              key={d}
+              onClick={() => !byWatch && toggleHabit(g.id, d)}
+              aria-pressed={on}
+              aria-label={`${d} ${byWatch ? '수면 기록으로 완료' : on ? '완료' : '미완료'}`}
+              className={`flex flex-col items-center rounded-lg py-1 text-[11px] leading-tight ${on ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-500'} ${isToday ? 'ring-2 ring-teal-700 ring-offset-1' : ''}`}
+            >
+              <span className={isToday ? 'font-bold' : ''}>{isToday ? '오늘' : dow}</span>
+              <span className="tabular-nums">{byWatch ? '⌚' : on ? '✓' : Number(d.slice(8))}</span>
+            </button>
+          )
+        })}
+      </div>
+      {auto.size > 0 && <p className="mt-1 text-[11px] text-slate-400">⌚ 표시는 삼성 헬스 수면 기록으로 자동 체크된 날이에요.</p>}
+    </>
   )
 }
 

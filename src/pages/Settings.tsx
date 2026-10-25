@@ -4,6 +4,7 @@ import ImportLog from '../components/ImportLog'
 import GoalsCard from '../components/GoalsCard'
 import MyProfileCard from '../components/MyProfileCard'
 import ProfileCard from '../components/ProfileCard'
+import ShealthImport from '../components/ShealthImport'
 import UpcomingRacesCard from '../components/UpcomingRacesCard'
 
 export default function Settings() {
@@ -13,6 +14,7 @@ export default function Settings() {
       <MyProfileCard />
       <ImportLog />
       <GarminImport />
+      <ShealthImport />
       <BackupRestore />
       <ProfileCard />
       <UpcomingRacesCard />
