@@ -6,8 +6,8 @@ import { INTENSITY_CHIP } from '../components/FitnessCards'
 import MemoInput, { MemoLine } from '../components/MemoInput'
 import ShoePicker from '../components/ShoePicker'
 import ThemePicker from '../components/ThemePicker'
-import { StrengthForm, WorkoutForm, WorkoutHistory } from '../components/WorkoutForms'
-import { WORKOUT_TYPES } from '../analytics/workouts'
+import { StrengthForm, WorkoutEditor, WorkoutForm, WorkoutHistory } from '../components/WorkoutForms'
+import { allEntries, durationOf, WORKOUT_TYPES, type Entry } from '../analytics/workouts'
 import { themeOf } from '../analytics/themes'
 import { addRun, db, deleteRun, editRun, setRunShoe, updateShoe, type StoredDay } from '../db/db'
 import { getProfile } from '../db/profile'
@@ -17,6 +17,7 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000
 const km = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}km`
 
 const MENU_KEY = 'workout-menu'
+const ALL = '전체'
 
 function savedMenu(): string {
   try {
@@ -31,6 +32,7 @@ export default function Workout() {
   const shoes = useLiveQuery(() => db.shoes.toArray())
   const [menu, setMenu] = useState(savedMenu)
   if (!days || !shoes) return null
+  const all = menu === ALL
   const type = WORKOUT_TYPES.find((t) => t.label === menu) ?? WORKOUT_TYPES[0]
   const pick = (label: string) => {
     setMenu(label)
@@ -52,18 +54,23 @@ export default function Workout() {
     <section className="space-y-4">
       <h1 className="text-2xl font-bold">운동</h1>
       <nav aria-label="운동 종류" className="flex flex-wrap gap-1.5">
-        {WORKOUT_TYPES.map((t) => (
-          <button
-            key={t.label}
-            onClick={() => pick(t.label)}
-            aria-pressed={t === type}
-            className={`shrink-0 rounded-full px-4 py-1.5 text-sm ${t === type ? 'bg-teal-700 font-semibold text-white' : 'bg-white text-slate-700 shadow-sm'}`}
-          >
-            {t.label}
-          </button>
-        ))}
+        {[ALL, ...WORKOUT_TYPES.map((t) => t.label)].map((label) => {
+          const on = all ? label === ALL : label === type.label
+          return (
+            <button
+              key={label}
+              onClick={() => pick(label)}
+              aria-pressed={on}
+              className={`shrink-0 rounded-full px-4 py-1.5 text-sm ${on ? 'bg-teal-700 font-semibold text-white' : 'bg-white text-slate-700 shadow-sm'}`}
+            >
+              {label}
+            </button>
+          )
+        })}
       </nav>
-      {type.kind === 'run' ? (
+      {all ? (
+        <AllWorkouts days={days} />
+      ) : type.kind === 'run' ? (
         <>
           <RunForm shoes={active} places={recentPlaces(days)} />
           <RecentRuns days={days} shoes={active} />
@@ -267,6 +274,83 @@ function RecentRuns({ days, shoes }: { days: StoredDay[]; shoes: string[] }) {
       )}
     </Card>
   )
+}
+
+/** Every workout in one list, grouped by day; tap one to edit it. */
+function AllWorkouts({ days }: { days: StoredDay[] }) {
+  const [limit, setLimit] = useState(14)
+  const [editing, setEditing] = useState<string>()
+  const entries = allEntries(days)
+  if (!entries.length) {
+    return (
+      <Card title="전체 운동 기록">
+        <p className="text-sm text-slate-500">위 메뉴에서 운동 종류를 골라 기록하면 여기에 날짜별로 모여요.</p>
+      </Card>
+    )
+  }
+  const dates = [...new Set(entries.map((e) => e.date))]
+  const shown = dates.slice(0, limit)
+  return (
+    <Card title={`전체 운동 기록 (${dates.length}일)`}>
+      <ul className="divide-y divide-slate-100">
+        {shown.map((date) => (
+          <li key={date} className="py-2">
+            <div className="mb-1 text-xs font-semibold text-slate-500 tabular-nums">
+              {date.slice(2).replaceAll('-', '.')} ({'일월화수목금토'[new Date(`${date}T00:00:00Z`).getUTCDay()]})
+            </div>
+            <ul className="space-y-1.5">
+              {entries
+                .filter((e) => e.date === date)
+                .map((e) => {
+                  const key = e.act ? `${e.date}#${e.act.index}` : `${e.date}#log`
+                  return (
+                    <li key={key}>
+                      <button
+                        onClick={() => e.act && setEditing(editing === key ? undefined : key)}
+                        disabled={!e.act}
+                        className="w-full text-left text-sm disabled:cursor-default"
+                        aria-label={e.act ? `${e.label} 수정` : undefined}
+                      >
+                        <span className="mr-1">{e.icon}</span>
+                        <b>{e.label}</b>
+                        <span className="ml-1.5 text-slate-700 tabular-nums">{entrySummary(e)}</span>
+                        {e.act && <MemoLine memo={e.act.memo} feeling={e.act.feeling} />}
+                      </button>
+                      {e.act &&
+                        editing === key &&
+                        (e.act.kind === 'run' ? (
+                          <RunEditor run={e.act} onDone={() => setEditing(undefined)} />
+                        ) : (
+                          <WorkoutEditor act={e.act} days={days} onDone={() => setEditing(undefined)} />
+                        ))}
+                    </li>
+                  )
+                })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      {dates.length > limit && (
+        <button onClick={() => setLimit(limit + 30)} className="mt-2 w-full rounded-lg bg-slate-100 py-2 text-sm">
+          더 보기 ({dates.length - limit}일 남음)
+        </button>
+      )}
+      <p className="mt-2 text-xs text-slate-400">기록을 누르면 수정·삭제할 수 있어요. 메모장의 웨이트 기록(부위만 있는 것)은 고칠 수 없어요.</p>
+    </Card>
+  )
+}
+
+function entrySummary(e: Entry): string {
+  const a = e.act
+  if (!a) return e.parts?.length ? e.parts.join(', ') : ''
+  const sec = durationOf(a)
+  const m = sec ? Math.round(sec / 60) : 0
+  const mins = m ? (m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ''}` : `${m}분`) : ''
+  if (a.kind === 'run') {
+    const where = a.event ?? a.place
+    return [km(a.distanceKm), sec && `${fmtTime(sec)}`, themeOf(a).theme, where].filter(Boolean).join(' · ')
+  }
+  return [a.kind === 'strength' && a.exercises?.join(', '), a.distanceKm > 0 && km(a.distanceKm), mins, a.place].filter(Boolean).join(' · ')
 }
 
 function RunEditor({ run, onDone }: { run: Activity & { date: string; index: number }; onDone: () => void }) {

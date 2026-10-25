@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
-import { isOfType, STRENGTH_EXERCISES, workoutsOf, type DatedWorkout, type WorkoutType } from '../analytics/workouts'
-import { addWorkout, deleteRun, setMemo, type StoredDay } from '../db/db'
-import type { Feeling } from '../import/parseLog'
+import { durationOf, isOfType, STRENGTH_EXERCISES, workoutsOf, type DatedWorkout, type WorkoutType } from '../analytics/workouts'
+import { addWorkout, deleteRun, editRun, type StoredDay } from '../db/db'
+import type { DayEntry, Feeling } from '../import/parseLog'
 import MemoInput, { MemoLine } from './MemoInput'
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
@@ -209,18 +209,13 @@ export function WorkoutHistory({ type, days }: { type: WorkoutType; days: Stored
               {i.act && (
                 <span className="flex shrink-0 gap-1">
                   <button onClick={() => setEditing(editing === i.key ? undefined : i.key)} className="px-1 text-xs text-teal-700">
-                    소감
+                    {editing === i.key ? '닫기' : '수정'}
                   </button>
-                  {i.act.source === 'app' && (
-                    <button onClick={() => confirm(`${i.date} 기록을 지울까요?`) && deleteRun(i.act!.date, i.act!.index)} className="px-1 text-xs text-slate-400">
-                      삭제
-                    </button>
-                  )}
                 </span>
               )}
             </div>
             {i.act && editing !== i.key && <MemoLine memo={i.act.memo} feeling={i.act.feeling} />}
-            {i.act && editing === i.key && <MemoEditor act={i.act} onDone={() => setEditing(undefined)} />}
+            {i.act && editing === i.key && <WorkoutEditor act={i.act} days={days} onDone={() => setEditing(undefined)} />}
           </li>
         ))}
       </ul>
@@ -233,19 +228,101 @@ export function WorkoutHistory({ type, days }: { type: WorkoutType; days: Stored
   )
 }
 
-function MemoEditor({ act, onDone }: { act: DatedWorkout; onDone: () => void }) {
+/** Edits any workout other than a run: date, numbers, place, sport name or exercises, and the note. */
+export function WorkoutEditor({ act, days, onDone }: { act: DatedWorkout; days: DayEntry[]; onDone: () => void }) {
+  const [date, setDate] = useState(act.date)
+  const [distance, setDistance] = useState(act.distanceKm ? String(act.distanceKm) : '')
+  const [minutes, setMinutes] = useState(durationOf(act) ? String(Math.round(durationOf(act)! / 60)) : '')
+  const [place, setPlace] = useState(act.place ?? '')
+  const [sport, setSport] = useState(act.sport ?? '')
+  const [exercises, setExercises] = useState<string[]>(act.exercises ?? [])
+  const [custom, setCustom] = useState('')
   const [memo, setMemoText] = useState(act.memo ?? '')
   const [feeling, setFeeling] = useState<Feeling | undefined>(act.feeling)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const key = `${act.date}-${act.index}`
+  const hasDistance = act.kind === 'walk' || act.kind === 'hike'
+  const km = Number(distance)
+  const min = Number(minutes)
+  const typed = days.flatMap((d) => d.activities.flatMap((a) => (a.kind === 'strength' && !a.deleted ? (a.exercises ?? []) : [])))
+  const options = [...new Set([...STRENGTH_EXERCISES, ...typed, ...exercises])]
+  const toggle = (x: string) => setExercises(exercises.includes(x) ? exercises.filter((e) => e !== x) : [...exercises, x])
+  const addCustom = () => {
+    const x = custom.trim()
+    if (x && !exercises.includes(x)) setExercises([...exercises, x])
+    setCustom('')
+  }
+  const valid = !!date && (!distance.trim() || km > 0) && (!minutes.trim() || min > 0) && (act.kind !== 'sport' || !!sport.trim())
+  const field = 'mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900'
+
   return (
-    <div className="mt-2 rounded-lg bg-slate-50 p-3">
-      <MemoInput id={`memo-${act.date}-${act.index}`} memo={memo} feeling={feeling} onMemo={setMemoText} onFeeling={setFeeling} />
-      <div className="mt-2 flex gap-2">
+    <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3 text-sm">
+      {act.kind === 'sport' && (
+        <label className="block text-xs text-slate-500">
+          운동 이름
+          <input id={`w-sport-${key}`} value={sport} onChange={(e) => setSport(e.target.value)} className={field} />
+        </label>
+      )}
+      <div className="flex gap-2">
+        <label className="flex-1 text-xs text-slate-500">
+          날짜
+          <input id={`w-date-${key}`} type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
+        </label>
+        {hasDistance && (
+          <label className="w-20 text-xs text-slate-500">
+            거리(km)
+            <input id={`w-km-${key}`} type="number" inputMode="decimal" step="0.1" value={distance} onChange={(e) => setDistance(e.target.value)} className={field} />
+          </label>
+        )}
+        <label className="w-20 text-xs text-slate-500">
+          시간(분)
+          <input id={`w-min-${key}`} type="number" inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value)} className={field} />
+        </label>
+      </div>
+      {act.kind === 'strength' ? (
+        <div className="text-xs text-slate-500">
+          운동 항목
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {options.map((x) => (
+              <button key={x} type="button" onClick={() => toggle(x)} className={chip(exercises.includes(x))}>
+                {x}
+              </button>
+            ))}
+            <input
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addCustom()}
+              onBlur={addCustom}
+              placeholder="직접 입력"
+              aria-label="운동 항목 직접 입력"
+              className="w-28 rounded-full border border-slate-300 px-3 py-1 text-xs"
+            />
+          </div>
+        </div>
+      ) : (
+        <label className="block text-xs text-slate-500">
+          장소
+          <input id={`w-place-${key}`} value={place} onChange={(e) => setPlace(e.target.value)} className={field} />
+        </label>
+      )}
+      <MemoInput id={`w-memo-${key}`} memo={memo} feeling={feeling} onMemo={setMemoText} onFeeling={setFeeling} />
+      <div className="flex gap-2">
         <button
+          disabled={!valid}
           onClick={async () => {
-            await setMemo(act.date, act.index, memo, feeling)
+            await editRun(act.date, act.index, {
+              date,
+              distanceKm: hasDistance && km > 0 ? km : act.kind === 'run' ? act.distanceKm : 0,
+              place: place.trim() || undefined,
+              durationSec: min > 0 ? Math.round(min * 60) : undefined,
+              memo,
+              feeling,
+              exercises: act.kind === 'strength' ? exercises : undefined,
+              sport: act.kind === 'sport' ? sport.trim() : undefined,
+            })
             onDone()
           }}
-          className="flex-1 rounded-lg bg-teal-700 py-2 font-semibold text-white"
+          className="flex-1 rounded-lg bg-teal-700 py-2 font-semibold text-white disabled:opacity-40"
         >
           저장
         </button>
@@ -253,6 +330,29 @@ function MemoEditor({ act, onDone }: { act: DatedWorkout; onDone: () => void }) 
           취소
         </button>
       </div>
+      {confirmDelete ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">
+          이 기록을 지울까요?
+          <span className="flex gap-2">
+            <button
+              onClick={async () => {
+                await deleteRun(act.date, act.index)
+                onDone()
+              }}
+              className="rounded bg-red-700 px-3 py-1 font-semibold text-white"
+            >
+              삭제
+            </button>
+            <button onClick={() => setConfirmDelete(false)} className="rounded bg-white px-3 py-1">
+              아니요
+            </button>
+          </span>
+        </div>
+      ) : (
+        <button onClick={() => setConfirmDelete(true)} className="w-full text-xs text-red-700">
+          이 기록 삭제
+        </button>
+      )}
     </div>
   )
 }
