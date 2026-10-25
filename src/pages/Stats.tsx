@@ -6,6 +6,7 @@ import { bodyFatSeries, crewCounts, metricSeries, monthlyKm, runsOf, shoeTotals,
 import BarChart from '../components/charts/BarChart'
 import LineChart from '../components/charts/LineChart'
 import AllWorkoutStats from '../components/AllWorkoutStats'
+import { NutritionCard, SleepCard, StepsCard } from '../components/HealthCards'
 import { IntensityCard, Vo2Card } from '../components/FitnessCards'
 import RaceRecords from '../components/RaceRecords'
 import { db } from '../db/db'
@@ -23,8 +24,11 @@ export default function Stats() {
   const savedOrder = useLiveQuery(async () => ({ value: await getStatsOrder() }))
   const profile = useLiveQuery(getProfile)
   const vo2 = useLiveQuery(getVo2Entries)
+  const sleep = useLiveQuery(() => db.sleep.orderBy('date').toArray())
+  const nutrition = useLiveQuery(() => db.nutrition.orderBy('date').toArray())
+  const steps = useLiveQuery(() => db.steps.orderBy('date').toArray())
   const [arranging, setArranging] = useState(false)
-  if (!days || !shoeList || !inbody || !savedOrder || !profile || !vo2) return null
+  if (!days || !shoeList || !inbody || !savedOrder || !profile || !vo2 || !sleep || !nutrition || !steps) return null
   const order = resolveOrder(savedOrder.value)
   if (!days.length) {
     return (
@@ -63,6 +67,9 @@ export default function Stats() {
       </div>
     ),
     allWorkouts: <AllWorkoutStats days={days} today={today()} />,
+    sleep: sleep.length > 0 && <SleepCard nights={sleep} today={today()} />,
+    nutrition: nutrition.length > 0 && <NutritionCard days={nutrition} today={today()} weightKg={inbody.filter((r) => r.weightKg).sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.weightKg} />,
+    steps: steps.length > 0 && <StepsCard days={steps} today={today()} />,
     monthly: (
       <Card title="월별 러닝 거리" note={months.length === 24 ? '최근 24개월' : undefined}>
         <BarChart

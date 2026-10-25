@@ -3,6 +3,7 @@ import type { GarminActivity } from '../import/garminCsv'
 import { applyGarmin, mergeGarmin, pairByDistance, sameRun, type GarminMergeStats } from '../import/mergeGarmin'
 import type { Activity, DayEntry, Feeling, RaceEdits } from '../import/parseLog'
 import { mergeRecord, type InBodyRecord } from '../inbody/inbody'
+import type { NutritionDay, ShealthFile, SleepNight, StepDay } from '../shealth/shealth'
 
 export interface StoredDay extends DayEntry {
   savedAt: number
@@ -27,12 +28,30 @@ export const db = new Dexie('workout-mgmt') as Dexie & {
   shoes: EntityTable<Shoe, 'name'>
   meta: EntityTable<Meta, 'key'>
   inbody: EntityTable<InBodyRecord, 'date'>
+  sleep: EntityTable<SleepNight, 'date'>
+  nutrition: EntityTable<NutritionDay, 'date'>
+  steps: EntityTable<StepDay, 'date'>
 }
 
 db.version(1).stores({ days: 'date' })
 db.version(2).stores({ days: 'date', shoes: 'name' })
 db.version(3).stores({ days: 'date', shoes: 'name', meta: 'key' })
 db.version(4).stores({ days: 'date', shoes: 'name', meta: 'key', inbody: 'date' })
+// Samsung Health imports: one row per night / day
+db.version(5).stores({ days: 'date', shoes: 'name', meta: 'key', inbody: 'date', sleep: 'date', nutrition: 'date', steps: 'date' })
+
+/** Saves what was read from Samsung Health files; a date already stored is replaced by the newer export. */
+export async function saveShealth(files: ShealthFile[]): Promise<{ sleep: number; nutrition: number; steps: number }> {
+  const sleep = files.flatMap((f) => f.sleep ?? [])
+  const nutrition = files.flatMap((f) => f.nutrition ?? [])
+  const steps = files.flatMap((f) => f.steps ?? [])
+  await db.transaction('rw', db.sleep, db.nutrition, db.steps, async () => {
+    await db.sleep.bulkPut(sleep)
+    await db.nutrition.bulkPut(nutrition)
+    await db.steps.bulkPut(steps)
+  })
+  return { sleep: sleep.length, nutrition: nutrition.length, steps: steps.length }
+}
 
 /** Saves InBody measurements, combining with what is stored for the same date. */
 export async function saveInBody(records: InBodyRecord[]): Promise<{ added: number; updated: number }> {

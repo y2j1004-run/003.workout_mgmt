@@ -12,6 +12,8 @@ import { fmtPace, predictSec, referenceRace, trainingPaces } from './vdot'
 import { themeOf } from './themes'
 import { didStrength } from './workouts'
 import type { UpcomingRace } from '../db/upcoming'
+import type { SleepNight } from '../shealth/shealth'
+import { avgSleep, fmtHours } from '../shealth/sleepStats'
 
 export type PlanKind = 'race' | 'long' | 'quality' | 'easy' | 'strength' | 'rest'
 
@@ -47,6 +49,8 @@ export interface PlanInput {
   maxHr?: MaxHr
   /** races the user has signed up for */
   races?: UpcomingRace[]
+  /** nights imported from Samsung Health */
+  sleep?: SleepNight[]
 }
 
 const DOW = ['월', '화', '수', '목', '금', '토', '일']
@@ -55,7 +59,7 @@ const half = (n: number) => Math.round(n * 2) / 2
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? 0
 
 /** Plans the week starting the Monday after `today`; undefined when there is too little history. */
-export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr, races = [] }: PlanInput): WeekPlan | undefined {
+export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr, races = [], sleep = [] }: PlanInput): WeekPlan | undefined {
   const runs = runsOf(days)
   const start = addDays(weekStart(today), 7)
   // the four whole weeks before the current one, newest first
@@ -109,6 +113,14 @@ export function planNextWeek({ days, inbody, today, weeklyKmGoal, maxHr, races =
     const clamped = Math.min(Math.max(weeklyKmGoal, avgKm * 0.7), avgKm * 1.1)
     if (Math.abs(clamped - target) >= 1) reasons.push(`주간 목표 ${weeklyKmGoal}km에 맞춰 ${weeklyKmGoal > clamped ? '조금씩 늘려 가요' : '조정했어요'}`)
     target = clamped
+  }
+  // short sleep lately: hold back a little (not on top of a recovery week)
+  const sleepMin = avgSleep(sleep, today)
+  if (sleepMin != null && sleepMin < 390 && !recovery) {
+    target *= 0.9
+    reasons.push(`최근 7일 평균 수면이 ${fmtHours(sleepMin)}으로 짧아 거리를 10% 줄였어요. 잠을 먼저 챙기세요`)
+  } else if (sleepMin != null && sleepMin >= 420) {
+    reasons.push(`최근 7일 평균 수면 ${fmtHours(sleepMin)}으로 회복은 충분해요`)
   }
   // taper toward a race: in its week, and the week (two for a marathon) before
   const nextRace = races.filter((r) => r.date >= start).sort((a, b) => a.date.localeCompare(b.date))[0]

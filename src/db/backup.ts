@@ -1,5 +1,6 @@
 import type { Goals } from '../analytics/home'
 import type { InBodyRecord } from '../inbody/inbody'
+import type { NutritionDay, SleepNight, StepDay } from '../shealth/shealth'
 import { getCustomGoals, getGoals, setCustomGoals, setGoals, type CustomGoal } from './goals'
 import { getStatsOrder, setStatsOrder } from './layout'
 import { getUpcomingRaces, setUpcomingRaces, type UpcomingRace } from './upcoming'
@@ -23,10 +24,13 @@ export interface Backup {
   vo2max?: Vo2Entry[]
   customGoals?: CustomGoal[]
   upcomingRaces?: UpcomingRace[]
+  sleep?: SleepNight[]
+  nutrition?: NutritionDay[]
+  steps?: StepDay[]
 }
 
 export async function createBackup(): Promise<Backup> {
-  const [days, shoes, inbody, goals, statsOrder, profile, vo2max, customGoals, upcomingRaces] = await Promise.all([
+  const [days, shoes, inbody, goals, statsOrder, profile, vo2max, customGoals, upcomingRaces, sleep, nutrition, steps] = await Promise.all([
     db.days.orderBy('date').toArray(),
     db.shoes.toArray(),
     db.inbody.orderBy('date').toArray(),
@@ -36,8 +40,27 @@ export async function createBackup(): Promise<Backup> {
     getVo2Entries(),
     getCustomGoals(),
     getUpcomingRaces(),
+    db.sleep.toArray(),
+    db.nutrition.toArray(),
+    db.steps.toArray(),
   ])
-  return { app: APP, format: FORMAT, exportedAt: new Date().toISOString(), days, shoes, inbody, goals, statsOrder, profile, vo2max, customGoals, upcomingRaces }
+  return {
+    app: APP,
+    format: FORMAT,
+    exportedAt: new Date().toISOString(),
+    days,
+    shoes,
+    inbody,
+    goals,
+    statsOrder,
+    profile,
+    vo2max,
+    customGoals,
+    upcomingRaces,
+    sleep,
+    nutrition,
+    steps,
+  }
 }
 
 export function backupFileName(b: Backup) {
@@ -73,7 +96,7 @@ export type RestoreMode = 'merge' | 'replace'
  * replace: deletes everything on the phone first.
  */
 export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ days: number; shoes: number; inbody: number }> {
-  return db.transaction('rw', db.days, db.shoes, db.inbody, db.meta, async () => {
+  return db.transaction('rw', [db.days, db.shoes, db.inbody, db.meta, db.sleep, db.nutrition, db.steps], async () => {
     if (b.goals && (mode === 'replace' || !Object.keys(await getGoals()).length)) await setGoals(b.goals)
     if (b.statsOrder && (mode === 'replace' || !(await getStatsOrder()))) await setStatsOrder(b.statsOrder)
     if (b.profile && (mode === 'replace' || !Object.keys(await getProfile()).length)) await setProfile(b.profile)
@@ -91,9 +114,15 @@ export async function restoreBackup(b: Backup, mode: RestoreMode): Promise<{ day
       await db.days.clear()
       await db.shoes.clear()
       await db.inbody.clear()
+      await db.sleep.clear()
+      await db.nutrition.clear()
+      await db.steps.clear()
     }
-    // InBody records carry no save time; the backup copy wins for the same date
+    // InBody records and Samsung Health days carry no save time; the backup copy wins for the same date
     await db.inbody.bulkPut(b.inbody ?? [])
+    await db.sleep.bulkPut(b.sleep ?? [])
+    await db.nutrition.bulkPut(b.nutrition ?? [])
+    await db.steps.bulkPut(b.steps ?? [])
     const current = new Map((await db.days.bulkGet(b.days.map((d) => d.date))).filter((d) => !!d).map((d) => [d.date, d]))
     const days = b.days.filter((d) => {
       const mine = current.get(d.date)
