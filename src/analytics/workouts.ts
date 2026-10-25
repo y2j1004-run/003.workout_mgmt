@@ -118,9 +118,9 @@ export interface WorkoutStats {
   byType: TypeStats[]
 }
 
-/** Sessions, time and distance per workout type between two dates (inclusive). */
-export function workoutStats(days: DayEntry[], from: string, to: string): WorkoutStats {
-  const entries = allEntries(days).filter((e) => e.date >= from && e.date <= to)
+/** Sessions, time and distance per workout type between two dates (inclusive), optionally for one type only. */
+export function workoutStats(days: DayEntry[], from: string, to: string, label?: string): WorkoutStats {
+  const entries = allEntries(days).filter((e) => e.date >= from && e.date <= to && (!label || e.label === label))
   const map = new Map<string, TypeStats>()
   for (const e of entries) {
     const t = map.get(e.label) ?? { label: e.label, icon: e.icon, count: 0, km: 0, sec: 0 }

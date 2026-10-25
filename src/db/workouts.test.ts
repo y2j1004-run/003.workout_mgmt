@@ -66,5 +66,6 @@ describe('other workouts', () => {
     expect(s).toMatchObject({ activeDays: 3, sessions: 5, sec: 10800 })
     expect(s.byType.find((t) => t.label === '러닝')).toMatchObject({ count: 2, km: 13 })
     expect(s.byType.find((t) => t.label === '등산')).toMatchObject({ count: 1, km: 8, sec: 7200 })
+    expect(workoutStats(days, '2026-10-19', '2026-10-21', '러닝')).toMatchObject({ activeDays: 2, sessions: 2, byType: [{ label: '러닝', km: 13 }] })
   })
 })
