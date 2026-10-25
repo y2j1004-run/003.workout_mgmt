@@ -135,10 +135,14 @@ export interface RunChanges {
   durationSec?: number
   memo?: string
   feeling?: Feeling
+  /** strength: the exercises done */
+  exercises?: string[]
+  /** ball sports and 기타: the sport's name */
+  sport?: string
 }
 
 /**
- * Edits a run. Changing the date moves it: the run becomes an app-entered run on the new day,
+ * Edits a run (or any other workout). Changing the date moves it: the run becomes an app-entered run on the new day,
  * and the original is marked deleted so a re-import of the log doesn't put it back.
  */
 export async function editRun(date: string, index: number, c: RunChanges) {
@@ -154,12 +158,17 @@ export async function editRun(date: string, index: number, c: RunChanges) {
       memo: c.memo?.trim() || null,
       feeling: c.feeling ?? null,
     }
+    const extra = (a: Activity): Activity => ({
+      ...a,
+      ...(c.exercises !== undefined && { exercises: c.exercises.length ? c.exercises : undefined }),
+      ...(c.sport !== undefined && { sport: c.sport || undefined }),
+    })
     if (c.date === date) {
-      const activities = day.activities.map((a, i) => (i === index ? applyRaceEdits(a, edits) : a))
+      const activities = day.activities.map((a, i) => (i === index ? extra(applyRaceEdits(a, edits)) : a))
       await db.days.put({ ...day, activities, savedAt: Date.now() })
       return
     }
-    const moved = applyRaceEdits({ ...run, source: 'app', appEdits: undefined }, edits)
+    const moved = extra(applyRaceEdits({ ...run, source: 'app', appEdits: undefined }, edits))
     await db.days.put({ ...day, activities: removeRun(day.activities, index), savedAt: Date.now() })
     const target = (await db.days.get(c.date)) ?? emptyDay(c.date)
     await db.days.put({ ...target, activities: [...target.activities, moved], savedAt: Date.now() })

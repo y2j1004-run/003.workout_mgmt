@@ -5,6 +5,7 @@ import { ageOn, maxHeartRate } from '../analytics/fitness'
 import { bodyFatSeries, crewCounts, metricSeries, monthlyKm, runsOf, shoeTotals, summary } from '../analytics/stats'
 import BarChart from '../components/charts/BarChart'
 import LineChart from '../components/charts/LineChart'
+import AllWorkoutStats from '../components/AllWorkoutStats'
 import { IntensityCard, Vo2Card } from '../components/FitnessCards'
 import RaceRecords from '../components/RaceRecords'
 import { db } from '../db/db'
@@ -61,6 +62,7 @@ export default function Stats() {
         />
       </div>
     ),
+    allWorkouts: <AllWorkoutStats days={days} today={today()} />,
     monthly: (
       <Card title="월별 러닝 거리" note={months.length === 24 ? '최근 24개월' : undefined}>
         <BarChart

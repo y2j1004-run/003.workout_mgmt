@@ -2,6 +2,7 @@
 
 export const STATS_SECTIONS = [
   { id: 'summary', title: '요약' },
+  { id: 'allWorkouts', title: '전체 운동' },
   { id: 'monthly', title: '월별 러닝 거리' },
   { id: 'bodyFat', title: '체지방률' },
   { id: 'bp', title: '혈압' },

@@ -64,3 +64,76 @@ export function workoutsOf(days: DayEntry[], t: WorkoutType): DatedWorkout[] {
     .filter((a) => !a.deleted && isOfType(a, t))
     .sort((a, b) => b.date.localeCompare(a.date))
 }
+
+export const KIND_ICON: Record<ActivityKind, string> = { run: '🏃', walk: '🚶', hike: '⛰️', strength: '🏋️', sport: '⚽' }
+const SPORT_ICON: Record<string, string> = { 축구: '⚽', 농구: '🏀', 탁구: '🏓', 배드민턴: '🏸' }
+
+/** The menu name of an activity: 러닝, 걷기, 등산, 웨이트, or the sport's name. */
+export function typeLabelOf(a: Activity): string {
+  if (a.kind === 'sport') return a.sport || '기타'
+  return WORKOUT_TYPES.find((t) => t.kind === a.kind)!.label
+}
+
+export const iconOf = (a: Pick<Activity, 'kind' | 'sport'>) => (a.kind === 'sport' && a.sport && SPORT_ICON[a.sport]) || KIND_ICON[a.kind]
+
+/** Time spent, from the entry or the watch. */
+export const durationOf = (a: Activity): number | undefined => a.durationSec ?? a.garmin?.durationSec
+
+/** One line in the all-workouts list: an activity, or a log day that only says 웨이트. */
+export interface Entry {
+  date: string
+  label: string
+  icon: string
+  act?: DatedWorkout
+  /** body parts from the log, for strength days without an activity */
+  parts?: string[]
+}
+
+/** Every workout, newest first. */
+export function allEntries(days: DayEntry[]): Entry[] {
+  const out: Entry[] = []
+  for (const d of days) {
+    d.activities.forEach((a, index) => {
+      if (!a.deleted) out.push({ date: d.date, label: typeLabelOf(a), icon: iconOf(a), act: { ...a, date: d.date, index } })
+    })
+    if (d.strength?.done && !d.activities.some((a) => a.kind === 'strength' && !a.deleted)) {
+      out.push({ date: d.date, label: '웨이트', icon: KIND_ICON.strength, parts: d.strength.parts })
+    }
+  }
+  return out.sort((a, b) => b.date.localeCompare(a.date) || (a.act?.index ?? 99) - (b.act?.index ?? 99))
+}
+
+export interface TypeStats {
+  label: string
+  icon: string
+  count: number
+  km: number
+  sec: number
+}
+
+export interface WorkoutStats {
+  activeDays: number
+  sessions: number
+  sec: number
+  byType: TypeStats[]
+}
+
+/** Sessions, time and distance per workout type between two dates (inclusive), optionally for one type only. */
+export function workoutStats(days: DayEntry[], from: string, to: string, label?: string): WorkoutStats {
+  const entries = allEntries(days).filter((e) => e.date >= from && e.date <= to && (!label || e.label === label))
+  const map = new Map<string, TypeStats>()
+  for (const e of entries) {
+    const t = map.get(e.label) ?? { label: e.label, icon: e.icon, count: 0, km: 0, sec: 0 }
+    t.count++
+    t.km += e.act?.distanceKm ?? 0
+    t.sec += (e.act && durationOf(e.act)) ?? 0
+    map.set(e.label, t)
+  }
+  const byType = [...map.values()].map((t) => ({ ...t, km: Math.round(t.km * 10) / 10 })).sort((a, b) => b.count - a.count)
+  return {
+    activeDays: new Set(entries.map((e) => e.date)).size,
+    sessions: entries.length,
+    sec: byType.reduce((s, t) => s + t.sec, 0),
+    byType,
+  }
+}
