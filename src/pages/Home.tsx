@@ -26,6 +26,8 @@ import { SleepCard } from '../components/HealthCards'
 import type { SleepNight } from '../shealth/shealth'
 import { sleepGoalDates, withSleepChecks } from '../shealth/sleepStats'
 import { planNextWeek } from '../analytics/plan'
+import { reviewWeek } from '../analytics/weekReview'
+import WeekReviewCard from '../components/WeekReviewCard'
 import { ageOn, maxHeartRate } from '../analytics/fitness'
 import type { InBodyRecord } from '../inbody/inbody'
 
@@ -73,7 +75,7 @@ export default function Home() {
     weightKg: weights.at(-1)?.weightKg,
     startWeightKg: weights[0]?.weightKg,
   })
-  const plan = planNextWeek({
+  const planInput = {
     days,
     inbody,
     today: now,
@@ -81,7 +83,9 @@ export default function Home() {
     maxHr: maxHeartRate(runsOf(days), ageOn(profile.birthYear, now), profile.maxHr),
     races: upcoming,
     sleep,
-  })
+  }
+  const plan = planNextWeek(planInput)
+  const review = reviewWeek(planInput)
   const recent = runsOf(days).slice(-3).reverse()
   const diff = Math.round((week.km - week.lastWeekKmSoFar) * 10) / 10
   const maxDay = Math.max(...week.byDay, 1)
@@ -120,6 +124,7 @@ export default function Home() {
 
       <GoalsSummary progress={progress} custom={custom} now={now} nights={sleep} />
       <SleepCard nights={sleep} today={now} compact />
+      {review && <WeekReviewCard review={review} today={now} />}
       {plan && <PlanCard plan={plan} today={now} nextRace={upcoming.find((r) => r.date >= now)} />}
 
       <LatestBody inbody={inbody} bodyFat={bodyFat} />
